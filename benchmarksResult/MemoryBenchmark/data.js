@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1666884335994,
+  "lastUpdate": 1666885689878,
   "repoUrl": "https://github.com/H01001000/discordeno",
   "entries": {
     "Benchmark": [
@@ -78,6 +78,48 @@ window.BENCHMARK_DATA = {
             "value": 275.8,
             "unit": "MB",
             "range": "273.04 … 277.81"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "heiheiho000@gmail.com",
+            "name": "H01001000",
+            "username": "H01001000"
+          },
+          "committer": {
+            "email": "heiheiho000@gmail.com",
+            "name": "H01001000",
+            "username": "H01001000"
+          },
+          "distinct": true,
+          "id": "8ca50aa193dd09541574a88b23eb1fc7e5cf2121",
+          "message": "fix: link",
+          "timestamp": "2022-10-27T23:47:10+08:00",
+          "tree_id": "58d6938b18391527a68ecb5c5775833883c2145d",
+          "url": "https://github.com/H01001000/discordeno/commit/8ca50aa193dd09541574a88b23eb1fc7e5cf2121"
+        },
+        "date": 1666885688086,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "[Cache Plugin Memory Usage After Loaded DB] - RSS",
+            "value": 276.81,
+            "unit": "MB",
+            "range": "276.2 … 277.22"
+          },
+          {
+            "name": "[Cache Plugin Memory Usage After Loaded DB] - Heap Used",
+            "value": 256.33,
+            "unit": "MB",
+            "range": "254.21 … 258.21"
+          },
+          {
+            "name": "[Cache Plugin Memory Usage After Loaded DB] - Heap Total",
+            "value": 276.76,
+            "unit": "MB",
+            "range": "275.97 … 278.01"
           }
         ]
       }
