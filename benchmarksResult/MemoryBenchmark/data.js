@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1666885849410,
+  "lastUpdate": 1666886341957,
   "repoUrl": "https://github.com/H01001000/discordeno",
   "entries": {
     "Benchmark": [
@@ -162,6 +162,84 @@ window.BENCHMARK_DATA = {
             "value": 276.34,
             "unit": "MB",
             "range": "273.4 … 277.81"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "heiheiho000@gmail.com",
+            "name": "H01001000",
+            "username": "H01001000"
+          },
+          "committer": {
+            "email": "heiheiho000@gmail.com",
+            "name": "H01001000",
+            "username": "H01001000"
+          },
+          "distinct": true,
+          "id": "fc5b359c69696aa42df962e576a1aeea178cd2ec",
+          "message": "just trying trigger",
+          "timestamp": "2022-10-27T23:57:38+08:00",
+          "tree_id": "45b11f70e854232afa17d59d09d50bae384f0123",
+          "url": "https://github.com/H01001000/discordeno/commit/fc5b359c69696aa42df962e576a1aeea178cd2ec"
+        },
+        "date": 1666886339499,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "[Guild.toggles.features - Current] Get the features of a guild",
+            "value": 1400,
+            "unit": "ns/iter",
+            "range": 940
+          },
+          {
+            "name": "[Guild.toggles.features - Previous] Get the features of a guild",
+            "value": 1350,
+            "unit": "ns/iter",
+            "range": 500
+          },
+          {
+            "name": "[Transformer - Current] Discord User to a User",
+            "value": 177,
+            "unit": "ns/iter",
+            "range": 63
+          },
+          {
+            "name": "[Transformer - Previous] Discord User to a User",
+            "value": 183,
+            "unit": "ns/iter",
+            "range": 83
+          },
+          {
+            "name": "[Transformer - Current] User to a Discord User",
+            "value": 166,
+            "unit": "ns/iter",
+            "range": 52
+          },
+          {
+            "name": "[Transformer - Previous] User to a Discord User",
+            "value": 155,
+            "unit": "ns/iter",
+            "range": 50
+          },
+          {
+            "name": "[Cache Plugin Memory Usage After Loaded DB] - RSS",
+            "value": 276.72,
+            "unit": "MB",
+            "range": "274.07 … 278.52"
+          },
+          {
+            "name": "[Cache Plugin Memory Usage After Loaded DB] - Heap Used",
+            "value": 261.27,
+            "unit": "MB",
+            "range": "253.82 … 266.68"
+          },
+          {
+            "name": "[Cache Plugin Memory Usage After Loaded DB] - Heap Total",
+            "value": 275.64,
+            "unit": "MB",
+            "range": "273.04 … 277.27"
           }
         ]
       }
