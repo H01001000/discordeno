@@ -1,10 +1,10 @@
-name: Test run v1
+name: Validate Cache
 
 on:
   workflow_dispatch:
 
 jobs:
-  test:
+  validate-cache:
     runs-on: ubuntu-18.04
     steps:
       - name: Show environment v1
