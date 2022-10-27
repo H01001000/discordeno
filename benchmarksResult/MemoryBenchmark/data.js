@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1666885689878,
+  "lastUpdate": 1666885849410,
   "repoUrl": "https://github.com/H01001000/discordeno",
   "entries": {
     "Benchmark": [
@@ -120,6 +120,48 @@ window.BENCHMARK_DATA = {
             "value": 276.76,
             "unit": "MB",
             "range": "275.97 … 278.01"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "48591478+H01001000@users.noreply.github.com",
+            "name": "Jonathan Ho",
+            "username": "H01001000"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "03d96f1d6852d49df2e320c7323c1524c2948e4f",
+          "message": "Merge branch 'main' into benchmark",
+          "timestamp": "2022-10-27T23:49:41+08:00",
+          "tree_id": "58df1300ae45dfcf0882cd9fdf5e5bd08335772c",
+          "url": "https://github.com/H01001000/discordeno/commit/03d96f1d6852d49df2e320c7323c1524c2948e4f"
+        },
+        "date": 1666885845581,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "[Cache Plugin Memory Usage After Loaded DB] - RSS",
+            "value": 277.67,
+            "unit": "MB",
+            "range": "274.68 … 279.29"
+          },
+          {
+            "name": "[Cache Plugin Memory Usage After Loaded DB] - Heap Used",
+            "value": 262.65,
+            "unit": "MB",
+            "range": "255.97 … 268.4"
+          },
+          {
+            "name": "[Cache Plugin Memory Usage After Loaded DB] - Heap Total",
+            "value": 276.34,
+            "unit": "MB",
+            "range": "273.4 … 277.81"
           }
         ]
       }
