@@ -1,17 +1,18 @@
 import { loadBot as oldLoadBot } from "https://raw.githubusercontent.com/discordeno/discordeno/main/tests/mod.ts";
 import { loadBot } from "../tests/mod.ts";
-import { CACHED_COMMUNITY_GUILD_ID } from "../tests/utils.ts";
-import { DiscordGuild, DiscordUser } from "../types/discord.ts";
 
+Deno.env.set("DISCORD_TOKEN", `${btoa("316179474163171338")}.gbaodiwabn`);
 const bot = loadBot();
 const oldBot = oldLoadBot();
-const discordGuild = await bot.rest.runMethod<DiscordGuild>(
-  bot.rest,
-  "GET",
-  bot.constants.routes.GUILD(CACHED_COMMUNITY_GUILD_ID, true),
+
+// Fetch the cached guild
+const discordGuild = JSON.parse(
+  await (await fetch("https://raw.githubusercontent.com/discordeno/discordeno/benchies/cache/cachedObject/guild.json"))
+    .text(),
 );
+
 const currentGuild = bot.transformers.guild(bot, { guild: discordGuild, shardId: 0 });
-const previousGuild = oldBot.transformers.guild(bot, { guild: discordGuild, shardId: 0 });
+const previousGuild = oldBot.transformers.guild(oldBot, { guild: discordGuild, shardId: 0 });
 
 Deno.bench("[Guild.toggles.features - Current] Get the features of a guild", () => {
   currentGuild.toggles.features;
@@ -21,7 +22,12 @@ Deno.bench("[Guild.toggles.features - Previous] Get the features of a guild", ()
   previousGuild.toggles.features;
 });
 
-const discordUser = await bot.rest.runMethod<DiscordUser>(bot.rest, "GET", bot.constants.routes.USER(bot.id));
+// Fetch the cached user
+const discordUser = JSON.parse(
+  await (await fetch("https://raw.githubusercontent.com/discordeno/discordeno/benchies/cache/cachedObject/user.json"))
+    .text(),
+);
+
 const newUser = bot.transformers.user(bot, discordUser);
 const oldUser = oldBot.transformers.user(oldBot, discordUser);
 

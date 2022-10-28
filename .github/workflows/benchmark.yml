@@ -1,0 +1,53 @@
+name: Benchmark
+
+on:
+  pull_request:
+  push:
+
+jobs:
+  benchmark:
+    name: Benchmark
+    runs-on: ubuntu-latest
+    permissions: write-all
+    steps:
+      - uses: actions/checkout@v3
+      - uses: denoland/setup-deno@main
+        with:
+          deno-version: v1.x
+
+        # this is the performance benchmark
+      - name: Cache deps
+        run: deno cache performance/mod.ts
+      - name: Run Benchmark
+        run: NO_COLOR=true deno bench --unstable -A performance/mod.ts | tee output.txt
+      - name: Format Benchmark Output
+        run: deno run -A performance/tranformOutput.ts
+
+        # this is the memory benchmark
+      - name: Download db from benchmark repo
+        run: wget https://github.com/discordeno/benchmarks/raw/main/db.tar.gz
+      - name: Decompress db
+        run: tar -xzvf db.tar.gz
+      - name: Run memory benchmark
+        run: deno run --v8-flags="--expose-gc" -A performance/memory.ts
+
+      - name: Store benchmark result
+        uses: benchmark-action/github-action-benchmark@v1
+        id: benchmark-action
+        with:
+          tool: "customSmallerIsBetter"
+          output-file-path: output.txt
+          gh-pages-branch: "benchies"
+          benchmark-data-dir-path: benchmarksResult/MemoryBenchmark
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Save Commmit SHA
+        run: |
+          mkdir -p ./commitData
+          echo $GITHUB_SHA > ./commitData/sha
+          echo $GITHUB_REPOSITORY > ./commitData/repo
+      - uses: actions/upload-artifact@v3
+        with:
+          name: commitData
+          path: commitData/
