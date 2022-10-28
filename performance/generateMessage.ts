@@ -46,4 +46,3 @@ if (window.BENCHMARK_DATA) {
   }
   console.log(message.replaceAll('`', "\\`"))
 }
-//
