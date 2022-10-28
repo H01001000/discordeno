@@ -43,13 +43,10 @@ jobs:
           auto-push: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Save Commmit SHA
-        env:
-          SHA: ${{ GITHUB_SHA }}
-          REPO: ${{ GITHUB_REPOSITORY }}
         run: |
           mkdir -p ./commitData
-          echo $SHA > ./commitData/sha
-          echo $REPO > ./commitData/repo
+          echo $GITHUB_SHA > ./commitData/sha
+          echo $GITHUB_REPOSITORY > ./commitData/repo
       - uses: actions/upload-artifact@v3
         with:
           name: commitData
