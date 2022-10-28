@@ -1,0 +1,17 @@
+{
+  "fmt": {
+    "files": {
+      "exclude": [
+        "benchmarks/",
+        "site/node_modules/",
+        "site/build",
+        "site/.docusaurus",
+        "site/.cache-loader",
+        "template/bigbot/node_modules"
+      ]
+    },
+    "options": {
+      "lineWidth": 120
+    }
+  }
+}
