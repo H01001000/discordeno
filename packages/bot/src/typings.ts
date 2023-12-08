@@ -1,8 +1,8 @@
 import {
   ApplicationCommandTypes,
   type AllowedMentions,
-  type ApplicationCommandOptionChoice,
   type ButtonStyles,
+  type ChannelTypes,
   type CreateApplicationCommand,
   type CreateContextApplicationCommand,
   type DiscordAllowedMentions,
@@ -17,11 +17,12 @@ import {
   type DiscordUser,
   type FileContent,
   type InteractionResponseTypes,
-  type MessageComponents,
   type MessageComponentTypes,
+  type MessageComponents,
   type TextStyles,
 } from '@discordeno/types'
 import type * as handlers from './handlers/index.js'
+import type { ApplicationCommandOptionChoice } from './transformers/applicationCommandOptionChoice.js'
 import type { Embed } from './transformers/embed.js'
 
 export function isContextApplicationCommand(command: CreateApplicationCommand): command is CreateContextApplicationCommand {
@@ -69,6 +70,8 @@ export interface DiscordComponent {
   }
   /** optional url for link-style buttons that can navigate a user to the web. Only type 5 Link buttons can have a url */
   url?: string
+  /** List of channel types to include in a channel select menu options list */
+  channel_types?: ChannelTypes[]
   /** The choices! Maximum of 25 items. */
   options?: DiscordSelectOption[]
   /** A custom placeholder text if nothing is selected. Maximum 150 characters. */
@@ -104,8 +107,8 @@ export interface BotInteractionCallbackData {
   embeds?: Embed[]
   /** Allowed mentions for the message */
   allowedMentions?: AllowedMentions
-  /** The contents of the file being sent */
-  file?: FileContent | FileContent[]
+  /** The contents of the files being sent */
+  files?: FileContent[]
   /** The customId you want to use for this modal response. */
   customId?: string
   /** The title you want to use for this modal response. */
@@ -201,4 +204,32 @@ export interface BotGatewayHandlerOptions {
   INTEGRATION_CREATE: typeof handlers.handleIntegrationCreate
   INTEGRATION_UPDATE: typeof handlers.handleIntegrationUpdate
   INTEGRATION_DELETE: typeof handlers.handleIntegrationDelete
+  ENTITLEMENT_CREATE: typeof handlers.handleEntitlementCreate
+  ENTITLEMENT_UPDATE: typeof handlers.handleEntitlementUpdate
+  ENTITLEMENT_DELETE: typeof handlers.handleEntitlementDelete
+}
+
+export enum MessageFlags {
+  /** Whether this message has been published to subscribed channels (via Channel Following) */
+  Crossposted = 1 << 0,
+  /** Whether this message originated from a message in another channel (via Channel Following) */
+  IsCrosspost = 1 << 1,
+  /** Whether do not include any embeds when serializing this message */
+  SuppressEmbeds = 1 << 2,
+  /** Whether the source message for this crosspost has been deleted (via Channel Following) */
+  SourceMessageDeleted = 1 << 3,
+  /** Whether this message came from the urgent message system */
+  Urgent = 1 << 4,
+  /** Whether this message has an associated thread, with the same id as the message */
+  HasThread = 1 << 5,
+  /** Whether this message is only visible to the user who invoked the Interaction */
+  Ephemeral = 1 << 6,
+  /** Whether this message is an Interaction Response and the bot is "thinking" */
+  Loading = 1 << 7,
+  /** Whether this message failed to mention some roles and add their members to the thread */
+  FailedToMentionSomeRolesInThread = 1 << 8,
+  /** Whether this message will not trigger push and desktop notifications */
+  SuppressNotifications = 1 << 12,
+  /** Whether this message is a voice message */
+  IsVoiceMessage = 1 << 13,
 }

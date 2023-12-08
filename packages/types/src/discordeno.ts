@@ -2,17 +2,23 @@ import type {
   AutoModerationActionType,
   AutoModerationEventTypes,
   AutoModerationTriggerTypes,
+  DiscordApplicationCommandOption,
+  DiscordApplicationCommandOptionChoice,
   DiscordAttachment,
   DiscordAutoModerationRuleTriggerMetadataPresets,
   DiscordChannel,
   DiscordEmbed,
+  DiscordGuildOnboardingMode,
+  DiscordGuildOnboardingPrompt,
+  DiscordInstallParams,
+  DiscordMessageFlag,
   DiscordRole,
 } from './discord.js'
 import type {
   AllowedMentionsTypes,
-  ApplicationCommandOptionTypes,
   ApplicationCommandPermissionTypes,
   ApplicationCommandTypes,
+  ApplicationFlags,
   AuditLogEvents,
   BigString,
   ButtonStyles,
@@ -37,6 +43,7 @@ import type {
   VideoQualityModes,
 } from './shared.js'
 
+/** https://discord.com/developers/docs/resources/channel#create-message-jsonform-params */
 export interface CreateMessageOptions {
   /** The message contents (up to 2000 characters) */
   content?: string
@@ -62,12 +69,14 @@ export interface CreateMessageOptions {
     /** When sending, whether to error if the referenced message doesn't exist instead of sending as a normal (non-reply) message, default true */
     failIfNotExists: boolean
   }
-  /** The contents of the file being sent */
-  file?: FileContent | FileContent[]
+  /** The contents of the files being sent */
+  files?: FileContent[]
   /** The components you would like to have sent in this message */
   components?: MessageComponents
   /** IDs of up to 3 stickers in the server to send in the message */
   stickerIds?: [BigString] | [BigString, BigString] | [BigString, BigString, BigString]
+  /** Message flags combined as a bitfield, only SUPPRESS_EMBEDS and SUPPRESS_NOTIFICATIONS can be set */
+  flags?: DiscordMessageFlag
 }
 
 export type MessageComponents = ActionRow[]
@@ -143,6 +152,11 @@ export interface SelectMenuUsersComponent {
   customId: string
   /** A custom placeholder text if nothing is selected. Maximum 150 characters. */
   placeholder?: string
+  /**
+   * List of default values for auto-populated select menu components
+   * The number of default values must be in the range defined by minValues and maxValues
+   */
+  defaultValues?: SelectMenuDefaultValue[]
   /** The minimum number of items that must be selected. Default 1. Between 1-25. */
   minValues?: number
   /** The maximum number of items that can be selected. Default 1. Between 1-25. */
@@ -158,6 +172,11 @@ export interface SelectMenuRolesComponent {
   customId: string
   /** A custom placeholder text if nothing is selected. Maximum 150 characters. */
   placeholder?: string
+  /**
+   * List of default values for auto-populated select menu components
+   * The number of default values must be in the range defined by minValues and maxValues
+   */
+  defaultValues?: SelectMenuDefaultValue[]
   /** The minimum number of items that must be selected. Default 1. Between 1-25. */
   minValues?: number
   /** The maximum number of items that can be selected. Default 1. Between 1-25. */
@@ -173,6 +192,11 @@ export interface SelectMenuUsersAndRolesComponent {
   customId: string
   /** A custom placeholder text if nothing is selected. Maximum 150 characters. */
   placeholder?: string
+  /**
+   * List of default values for auto-populated select menu components
+   * The number of default values must be in the range defined by minValues and maxValues
+   */
+  defaultValues?: SelectMenuDefaultValue[]
   /** The minimum number of items that must be selected. Default 1. Between 1-25. */
   minValues?: number
   /** The maximum number of items that can be selected. Default 1. Between 1-25. */
@@ -190,10 +214,17 @@ export interface SelectMenuChannelsComponent {
   customId: string
   /** A custom placeholder text if nothing is selected. Maximum 150 characters. */
   placeholder?: string
+  /**
+   * List of default values for auto-populated select menu components
+   * The number of default values must be in the range defined by minValues and maxValues
+   */
+  defaultValues?: SelectMenuDefaultValue[]
   /** The minimum number of items that must be selected. Default 1. Between 1-25. */
   minValues?: number
   /** The maximum number of items that can be selected. Default 1. Between 1-25. */
   maxValues?: number
+  /** List of channel types to include in the options list */
+  channelTypes?: ChannelTypes[]
   /** Whether or not this select is disabled */
   disabled?: boolean
 }
@@ -216,6 +247,13 @@ export interface SelectOption {
   }
   /** Will render this option as already-selected by default. */
   default?: boolean
+}
+
+export interface SelectMenuDefaultValue {
+  /** ID of a user, role, or channel */
+  id: bigint
+  /** Type of value that id represents. */
+  type: 'user' | 'role' | 'channel'
 }
 
 /** https://discord.com/developers/docs/interactions/message-components#text-inputs-text-input-structure */
@@ -265,11 +303,6 @@ export interface SearchMembers {
   query: string
   /** Max number of members to return (1-1000). Default: 1 */
   limit?: number
-}
-
-export interface WithReason {
-  /** The reason which should be added in the audit logs for doing this action. */
-  reason?: string
 }
 
 export interface OverwriteReadable {
@@ -339,6 +372,18 @@ export interface GetGuildAuditLog {
   limit?: number
 }
 
+/** https://discord.com/developers/docs/resources/user#get-current-user-guilds-query-string-params */
+export interface GetUserGuilds {
+  /** Get guilds before this guild ID */
+  before?: BigString
+  /** Get guilds after this guild ID */
+  after?: BigString
+  /** Maximum number of entries (between 1-200) to return, defaults to 200 */
+  limit?: number
+  /** Include approximate member and presence counts in response, defaults to false */
+  withCounts?: boolean
+}
+
 export interface GetBans {
   /** Number of users to return (up to maximum 1000). Default: 1000 */
   limit?: number
@@ -350,7 +395,7 @@ export interface GetBans {
 
 /** https://discord.com/developers/docs/resources/guild#list-guild-members */
 export interface ListGuildMembers {
-  /** Max number of members to return (1-1000). Default: 1000 */
+  /** Max number of members to return (1-1000). Default: 1 */
   limit?: number
   /** The highest user id in the previous page. Default: 0 */
   after?: string
@@ -406,7 +451,7 @@ export interface CreateSlashApplicationCommand {
   /** Type of command, defaults `ApplicationCommandTypes.ChatInput` if not set  */
   type?: ApplicationCommandTypes
   /** Parameters for the command */
-  options?: ApplicationCommandOption[]
+  options?: Camelize<DiscordApplicationCommandOption[]>
   /** Set of permissions represented as a bit set */
   defaultMemberPermissions?: PermissionStrings[]
   /** Indicates whether the command is available in DMs with the app, only for globally-scoped commands. By default, commands are visible. */
@@ -431,8 +476,8 @@ export interface InteractionCallbackData {
   embeds?: Array<Camelize<DiscordEmbed>>
   /** Allowed mentions for the message */
   allowedMentions?: AllowedMentions
-  /** The contents of the file being sent */
-  file?: FileContent | FileContent[]
+  /** The contents of the files being sent */
+  files?: FileContent[]
   /** The customId you want to use for this modal response. */
   customId?: string
   /** The title you want to use for this modal response. */
@@ -442,14 +487,7 @@ export interface InteractionCallbackData {
   /** Message flags combined as a bit field (only SUPPRESS_EMBEDS and EPHEMERAL can be set) */
   flags?: number
   /** Autocomplete choices (max of 25 choices) */
-  choices?: ApplicationCommandOptionChoice[]
-}
-
-export interface ApplicationCommandOptionChoice {
-  /** The name of the choice */
-  name: string
-  /** The value that this choice was represents. */
-  value: string | number
+  choices?: Camelize<DiscordApplicationCommandOptionChoice[]>
 }
 
 /** https://discord.com/developers/docs/interactions/slash-commands#interaction-response */
@@ -460,39 +498,8 @@ export interface InteractionResponse {
   data?: InteractionCallbackData
 }
 
-export interface ApplicationCommandOption {
-  /** Value of Application Command Option Type */
-  type: ApplicationCommandOptionTypes
-  /** 1-32 character name matching lowercase `^[\w-]{1,32}$` */
-  name: string
-  /** Localization object for the `name` field. Values follow the same restrictions as `name` */
-  nameLocalizations?: Localization
-  /** 1-100 character description */
-  description: string
-  /** Localization object for the `description` field. Values follow the same restrictions as `description` */
-  descriptionLocalizations?: Localization
-  /** If the parameter is required or optional--default `false` */
-  required?: boolean
-  /** Choices for `string` and `int` types for the user to pick from */
-  choices?: ApplicationCommandOptionChoice[]
-  /** If the option is a subcommand or subcommand group type, this nested options will be the parameters */
-  options?: ApplicationCommandOption[]
-  /** If the option is a channel type, the channels shown will be restricted to these types */
-  channelTypes?: ChannelTypes[]
-  /** Minimum number desired. */
-  minValue?: number
-  /** Maximum number desired. */
-  maxValue?: number
-  /** Minimum length desired. */
-  minLength?: number
-  /** Maximum length desired. */
-  maxLength?: number
-  /** if autocomplete interactions are enabled for this `String`, `Integer`, or `Number` type option */
-  autocomplete?: boolean
-}
-
 /** https://discord.com/developers/docs/resources/emoji#create-guild-emoji */
-export interface CreateGuildEmoji extends WithReason {
+export interface CreateGuildEmoji {
   /** Name of the emoji */
   name: string
   /** The 128x128 emoji image. Emojis and animated emojis have a maximum file size of 256kb. Attempting to upload an emoji larger than this limit will fail and return 400 Bad Request and an error message, but not a JSON status code. If a URL is provided to the image parameter, Discordeno will automatically convert it to a base64 string internally. */
@@ -502,7 +509,7 @@ export interface CreateGuildEmoji extends WithReason {
 }
 
 /** https://discord.com/developers/docs/resources/emoji#modify-guild-emoji */
-export interface ModifyGuildEmoji extends WithReason {
+export interface ModifyGuildEmoji {
   /** Name of the emoji */
   name?: string
   /** Roles allowed to use this emoji */
@@ -525,7 +532,7 @@ export interface RequestGuildMembers {
   nonce?: string
 }
 
-export interface CreateGuildChannel extends WithReason {
+export interface CreateGuildChannel {
   /** Channel name (1-100 characters) */
   name: string
   /** The type of channel */
@@ -568,11 +575,63 @@ export interface CreateGuildChannel extends WithReason {
     /** The unicode character of the emoji */
     emojiName?: string
   }>
-  /** the default sort order type used to order posts in forum channels */
+  /** The default sort order type used to order posts in forum channels */
   defaultSortOrder?: SortOrderTypes | null
+  /** The initial ratelimit to set on newly created threads in a channel. */
+  defaultThreadRateLimitPerUser?: number
 }
 
-export interface ModifyChannel extends WithReason {
+export interface CreateGlobalApplicationCommandOptions {
+  /** The bearer token of the developer of the application */
+  bearerToken: string
+}
+
+export interface CreateGuildApplicationCommandOptions {
+  /** The bearer token of the developer of the application */
+  bearerToken: string
+}
+
+export interface UpsertGlobalApplicationCommandOptions {
+  /** The bearer token of the developer of the application */
+  bearerToken: string
+}
+
+export interface UpsertGuildApplicationCommandOptions {
+  /** The bearer token of the developer of the application */
+  bearerToken: string
+}
+
+/** https://discord.com/developers/docs/resources/user#create-group-dm-json-params */
+export interface GetGroupDmOptions {
+  /** Access tokens of users that have granted your app the `gdm.join` scope */
+  accessTokens: string[]
+  /** A mapping of user ids to their respective nicknames */
+  nicks?: Record<string, string>
+}
+
+/** https://discord.com/developers/docs/resources/channel#group-dm-add-recipient-json-params */
+export interface AddDmRecipientOptions {
+  /** access token of a user that has granted your app the `gdm.join` scope */
+  accessToken: string
+  /** nickname of the user being added */
+  nick?: string
+}
+
+/** https://discord.com/developers/docs/resources/guild#add-guild-member-json-params */
+export interface AddGuildMemberOptions {
+  /** access token of a user that has granted your app the `guilds.join` scope */
+  accessToken: string
+  /** Value to set user's nickname to. Requires MANAGE_NICKNAMES permission on the bot */
+  nick?: string
+  /** Array of role ids the member is assigned. Requires MANAGE_ROLES permission on the bot */
+  roles?: string[]
+  /** Whether the user is muted in voice channels. Requires MUTE_MEMBERS permission on the bot */
+  mute?: boolean
+  /** Whether the user is deafened in voice channels. Requires DEAFEN_MEMBERS permission on the bot */
+  deaf?: boolean
+}
+
+export interface ModifyChannel {
   /** 1-100 character channel name */
   name?: string
   /** The type of channel; only conversion between text and news is supported and only in guilds with the "NEWS" feature */
@@ -634,21 +693,21 @@ export interface ModifyChannel extends WithReason {
   defaultSortOrder?: SortOrderTypes | null
 }
 
-export interface EditChannelPermissionOverridesOptions extends OverwriteReadable, WithReason {}
+export interface EditChannelPermissionOverridesOptions extends OverwriteReadable {}
 
 /** https://discord.com/developers/docs/resources/guild#modify-guild-channel-positions */
 export interface ModifyGuildChannelPositions {
   /** Channel id */
   id: BigString
   /** Sorting position of the channel */
-  position: number | null
+  position?: number | null
   /** Syncs the permission overwrites with the new parent, if moving to a new category */
   lockPositions?: boolean | null
   /** The new parent ID for the channel that is moved */
   parentId?: BigString | null
 }
 
-export interface ModifyWebhook extends WithReason {
+export interface ModifyWebhook {
   /** The default name of the webhook */
   name?: string
   /** Image for the default webhook avatar */
@@ -665,6 +724,8 @@ export interface ExecuteWebhook {
   threadId?: BigString
   /** Name of the thread to create (target channel has to be type of forum channel) */
   threadName?: string
+  /** Array of tag ids to apply to the thread (requires the webhook channel to be a forum or media channel) */
+  appliedTags?: BigString[]
   /** The message contents (up to 2000 characters) */
   content?: string
   /** Override the default username of the webhook */
@@ -673,8 +734,8 @@ export interface ExecuteWebhook {
   avatarUrl?: string
   /** True if this is a TTS message */
   tts?: boolean
-  /** The contents of the file being sent */
-  file?: FileContent | FileContent[]
+  /** The contents of the files being sent */
+  files?: FileContent[]
   /** Embedded `rich` content */
   embeds?: Array<Camelize<DiscordEmbed>>
   /** Allowed mentions for the message */
@@ -693,38 +754,51 @@ export interface DeleteWebhookMessageOptions {
   threadId: BigString
 }
 
-export interface CreateForumPostWithMessage extends WithReason {
+export interface CreateForumPostWithMessage {
   /** 1-100 character thread name */
   name: string
   /** Duration in minutes to automatically archive the thread after recent activity */
   autoArchiveDuration: 60 | 1440 | 4320 | 10080
   /** Amount of seconds a user has to wait before sending another message (0-21600) */
   rateLimitPerUser?: number | null
-  /** The message contents (up to 2000 characters) */
-  content?: string
-  /** Embedded `rich` content (up to 6000 characters) */
-  embeds?: Array<Camelize<DiscordEmbed>>
-  /** Allowed mentions for the message */
-  allowedMentions?: AllowedMentions
-  /** The contents of the file being sent */
-  file?: FileContent | FileContent[]
-  /** The components you would like to have sent in this message */
-  components?: MessageComponents
+  /** contents of the first message in the forum/media thread */
+  message: {
+    /** The message contents (up to 2000 characters) */
+    content?: string
+    /** Embedded `rich` content (up to 6000 characters) */
+    embeds?: Array<Camelize<DiscordEmbed>>
+    /** Allowed mentions for the message */
+    allowedMentions?: AllowedMentions
+    /** The components you would like to have sent in this message */
+    components?: MessageComponents
+    /** IDs of up to 3 stickers in the server to send in the message */
+    stickerIds?: BigString[]
+    /** Message flags combined as a bitfield, only SUPPRESS_EMBEDS and SUPPRESS_NOTIFICATIONS can be set */
+    flags?: DiscordMessageFlag
+  }
+  /** The IDs of the set of tags that have been applied to a thread in a GUILD_FORUM or a GUILD_MEDIA channel */
+  appliedTags?: BigString[]
+  /** The contents of the files being sent */
+  files?: FileContent[]
 }
 
-export interface CreateStageInstance extends WithReason {
+export interface CreateStageInstance {
+  /** The id of the Stage channel */
   channelId: BigString
+  /** The topic of the Stage instance (1-120 characters) */
   topic: string
   /** Notify @everyone that the stage instance has started. Requires the MENTION_EVERYONE permission. */
   sendStartNotification?: boolean
+  /** The guild scheduled event associated with this Stage instance */
+  guildScheduledEventId?: BigString
 }
 
-export interface EditStageInstanceOptions extends WithReason {
+export interface EditStageInstanceOptions {
   /** The topic of the Stage instance (1-120 characters) */
   topic: string
 }
 
-export interface StartThreadWithMessage extends WithReason {
+export interface StartThreadWithMessage {
   /** 1-100 character thread name */
   name: string
   /** Duration in minutes to automatically archive the thread after recent activity */
@@ -733,7 +807,7 @@ export interface StartThreadWithMessage extends WithReason {
   rateLimitPerUser?: number | null
 }
 
-export interface StartThreadWithoutMessage extends WithReason {
+export interface StartThreadWithoutMessage {
   /** 1-100 character thread name */
   name: string
   /** Duration in minutes to automatically archive the thread after recent activity */
@@ -746,7 +820,7 @@ export interface StartThreadWithoutMessage extends WithReason {
   invitable?: boolean
 }
 
-export interface CreateAutoModerationRuleOptions extends WithReason {
+export interface CreateAutoModerationRuleOptions {
   /** The name of the rule. */
   name: string
   /** The type of event to trigger the rule on. */
@@ -757,6 +831,8 @@ export interface CreateAutoModerationRuleOptions extends WithReason {
   triggerMetadata: {
     /** The keywords needed to match. Only present when TriggerType.Keyword */
     keywordFilter?: string[]
+    /** Regular expression patterns which will be matched against content. Only present when TriggerType.Keyword */
+    regexPatterns?: string[]
     /** The pre-defined lists of words to match from. Only present when TriggerType.KeywordPreset */
     presets?: DiscordAutoModerationRuleTriggerMetadataPresets[]
     /** The substrings which will exempt from triggering the preset trigger type. Only present when TriggerType.KeywordPreset */
@@ -784,7 +860,7 @@ export interface CreateAutoModerationRuleOptions extends WithReason {
   exemptChannels?: BigString[]
 }
 
-export interface EditAutoModerationRuleOptions extends WithReason {
+export interface EditAutoModerationRuleOptions {
   /** The name of the rule. */
   name: string
   /** The type of event to trigger the rule on. */
@@ -820,7 +896,7 @@ export interface EditAutoModerationRuleOptions extends WithReason {
   exemptChannels?: BigString[]
 }
 
-export interface CreateScheduledEvent extends WithReason {
+export interface CreateScheduledEvent {
   /** the channel id of the scheduled event. */
   channelId?: BigString
   /** location of the event. Required for events with `entityType: ScheduledEventEntityType.External` */
@@ -839,7 +915,7 @@ export interface CreateScheduledEvent extends WithReason {
   entityType: ScheduledEventEntityType
 }
 
-export interface EditScheduledEvent extends WithReason {
+export interface EditScheduledEvent {
   /** the channel id of the scheduled event. null if switching to external event. */
   channelId: BigString | null
   /** location of the event */
@@ -865,7 +941,7 @@ export interface GetScheduledEvents {
   withUserCount?: boolean
 }
 
-export interface CreateChannelInvite extends WithReason {
+export interface CreateChannelInvite {
   /** Duration of invite in seconds before expiry, or 0 for never. Between 0 and 604800 (7 days). Default: 86400 (24 hours) */
   maxAge?: number
   /** Max number of users or 0 for unlimited. Between 0 and 100. Default: 0 */
@@ -889,9 +965,9 @@ export interface EditMessage {
   /** Embedded `rich` content (up to 6000 characters) */
   embeds?: Array<Camelize<DiscordEmbed>> | null
   /** Edit the flags of the message (only `SUPPRESS_EMBEDS` can currently be set/unset) */
-  flags?: 4 | null
-  /** The contents of the file being sent/edited */
-  file?: FileContent | FileContent[] | null
+  flags?: DiscordMessageFlag | null
+  /** The contents of the files being sent/edited */
+  files?: FileContent[]
   /** Allowed mentions for the message */
   allowedMentions?: AllowedMentions
   /** When specified (adding new attachments), attachments which are not provided in this list will be removed. */
@@ -908,6 +984,14 @@ export interface ApplicationCommandPermissions {
   type: ApplicationCommandPermissionTypes
   /** `true` to allow, `false`, to disallow */
   permission: boolean
+}
+
+/** Additional proprieties for https://discord.com/developers/docs/interactions/application-commands#get-guild-application-command-permissions and https://discord.com/developers/docs/interactions/application-commands#get-guild-application-command-permissions */
+export interface GetApplicationCommandPermissionOptions {
+  /** Access token of the user. Requires the `applications.commands.permissions.update` scope */
+  accessToken: string
+  /** Id of the application */
+  applicationId: BigString
 }
 
 /** https://discord.com/developers/docs/resources/guild#create-guild */
@@ -1017,7 +1101,7 @@ export interface ModifyGuild {
   premiumProgressBarEnabled?: boolean
 }
 
-export interface CreateGuildStickerOptions extends WithReason {
+export interface CreateGuildStickerOptions {
   /** Name of the sticker (2-30 characters) */
   name: string
   /** Description of the sticker (empty or 2-100 characters) */
@@ -1028,7 +1112,7 @@ export interface CreateGuildStickerOptions extends WithReason {
   file: FileContent
 }
 
-export interface EditGuildStickerOptions extends WithReason {
+export interface EditGuildStickerOptions {
   /** Name of the sticker (2-30 characters) */
   name?: string
   /** Description of the sticker (empty or 2-100 characters) */
@@ -1095,12 +1179,12 @@ export interface ModifyGuildTemplate {
 }
 
 /** https://discord.com/developers/docs/resources/guild#create-guild-ban */
-export interface CreateGuildBan extends WithReason {
+export interface CreateGuildBan {
   /** Number of seconds to delete messages for, between 0 and 604800 (7 days) */
   deleteMessageSeconds?: number
 }
 
-export interface EditBotMemberOptions extends WithReason {
+export interface EditBotMemberOptions {
   nick?: string | null
 }
 
@@ -1116,8 +1200,8 @@ export interface ModifyGuildMember {
   deaf?: boolean | null
   /** Id of channel to move user to (if they are connected to voice). Requires the `MOVE_MEMBERS` permission */
   channelId?: BigString | null
-  /** when the user's timeout will expire and the user will be able to communicate in the guild again (up to 28 days in the future), set to null to remove timeout. Requires the `MODERATE_MEMBERS` permission */
-  communicationDisabledUntil?: number | null
+  /** when the user's timeout will expire and the user will be able to communicate in the guild again (up to 28 days in the future), set to null to remove timeout. Requires the `MODERATE_MEMBERS` permission. The date must be given in a ISO string form. */
+  communicationDisabledUntil?: string | null
 }
 
 /** https://discord.com/developers/docs/resources/guild#begin-guild-prune */
@@ -1128,4 +1212,88 @@ export interface BeginGuildPrune {
   computePruneCount?: boolean
   /** Role(s) ro include, default: none */
   includeRoles?: string[]
+}
+
+/** https://discord.com/developers/docs/resources/guild#modify-guild-onboarding-json-params */
+export interface EditGuildOnboarding {
+  /** Prompts shown during onboarding and in customize community */
+  prompts: Array<Camelize<DiscordGuildOnboardingPrompt>>
+  /** Channel IDs that members get opted into automatically */
+  defaultChannelIds: BigString[]
+  /** Whether onboarding is enabled in the guild */
+  enabled: boolean
+  /** Current mode of onboarding */
+  mode: DiscordGuildOnboardingMode
+}
+
+/** https://discord.com/developers/docs/monetization/entitlements#list-entitlements-query-params */
+export interface GetEntitlements {
+  /** User ID to look up entitlements for */
+  userId?: BigString
+  /** Optional list of SKU IDs to check entitlements for */
+  skuIds?: BigString[]
+  /** Retrieve entitlements before this entitlement ID */
+  before?: BigString
+  /** Retrieve entitlements after this entitlement ID */
+  after?: BigString
+  /** Number of entitlements to return, 1-100, default 100 */
+  limit?: number
+  /** Guild ID to look up entitlements for */
+  guildId?: BigString
+  /** Whether or not ended entitlements should be omitted */
+  excludeEnded?: boolean
+}
+
+/** https://discord.com/developers/docs/monetization/entitlements#create-test-entitlement-json-params */
+export interface CreateEntitlement {
+  /** ID of the SKU to grant the entitlement to */
+  skuId: BigString
+  /** ID of the guild or user to grant the entitlement to */
+  ownerId: BigString
+  /** The type of entitlement, guild subscription or user subscription */
+  ownerType: CreateEntitlementOwnerType
+}
+
+/** From the description of CreateEntitlement#ownerType on discord docs */
+export enum CreateEntitlementOwnerType {
+  /** Guild subscription */
+  GuildSubscription = 1,
+  /** User subscription */
+  UserSubscription = 2,
+}
+
+export interface EditApplication {
+  /** Default custom authorization URL for the app, if enabled */
+  customInstallUrl?: string
+  /** Description of the app */
+  description?: string
+  /** Role connection verification URL for the app */
+  roleConnectionsVerificationUrl?: string
+  /** Settings for the app's default in-app authorization link, if enabled */
+  installParams?: DiscordInstallParams
+  /**
+   * App's public flags
+   *
+   * @remarks
+   * Only limited intent flags (`GATEWAY_PRESENCE_LIMITED`, `GATEWAY_GUILD_MEMBERS_LIMITED`, and `GATEWAY_MESSAGE_CONTENT_LIMITED`) can be updated via the API.
+   */
+  flags?: ApplicationFlags
+  /** Icon for the app */
+  icon?: string | null
+  /** Default rich presence invite cover image for the app */
+  coverImage?: string | null
+  /**
+   * Interactions endpoint URL for the app
+   *
+   * @remarks
+   * To update an Interactions endpoint URL via the API, the URL must be valid
+   */
+  interactionEndpointUrl?: string
+  /**
+   * List of tags describing the content and functionality of the app (max of 20 characters per tag)
+   *
+   * @remarks
+   * There can only be a max of 5 tags
+   */
+  tags?: string[]
 }

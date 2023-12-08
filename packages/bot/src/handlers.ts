@@ -41,7 +41,7 @@ export function createBotGatewayHandlers(
     INTEGRATION_UPDATE: options.INTEGRATION_UPDATE ?? handlers.handleIntegrationUpdate,
     INTEGRATION_DELETE: options.INTEGRATION_DELETE ?? handlers.handleIntegrationDelete,
     INVITE_CREATE: options.INVITE_CREATE ?? handlers.handleInviteCreate,
-    INVITE_DELETE: options.INVITE_DELETE ?? handlers.handleInviteCreate,
+    INVITE_DELETE: options.INVITE_DELETE ?? handlers.handleInviteDelete,
     MESSAGE_CREATE: options.MESSAGE_CREATE ?? handlers.handleMessageCreate,
     MESSAGE_DELETE_BULK: options.MESSAGE_DELETE_BULK ?? handlers.handleMessageDeleteBulk,
     MESSAGE_DELETE: options.MESSAGE_DELETE ?? handlers.handleMessageDelete,
@@ -66,6 +66,9 @@ export function createBotGatewayHandlers(
     VOICE_SERVER_UPDATE: options.VOICE_SERVER_UPDATE ?? handlers.handleVoiceServerUpdate,
     VOICE_STATE_UPDATE: options.VOICE_STATE_UPDATE ?? handlers.handleVoiceStateUpdate,
     WEBHOOKS_UPDATE: options.WEBHOOKS_UPDATE ?? handlers.handleWebhooksUpdate,
+    ENTITLEMENT_CREATE: options.ENTITLEMENT_CREATE ?? handlers.handleEntitlementCreate,
+    ENTITLEMENT_UPDATE: options.ENTITLEMENT_UPDATE ?? handlers.handleEntitlementUpdate,
+    ENTITLEMENT_DELETE: options.ENTITLEMENT_DELETE ?? handlers.handleEntitlementDelete,
   }
 }
 

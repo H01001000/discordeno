@@ -39,11 +39,11 @@ for await (let filepath of walk(typedocOutPath)) {
 
   // Converts ugly names to clean names for example discordeno_types.ActionRow becomes ActionRow
   const cleanForms = [
-    { ugly: 'discordeno_bot.md', clean: 'Bot.md'},
-    { ugly: 'discordeno_gateway.md', clean: 'Gateway.md'},
-    { ugly: 'discordeno_rest.md', clean: 'Rest.md'},
-    { ugly: 'discordeno_types.md', clean: 'Types.md'},
-    { ugly: 'discordeno_utils.md', clean: 'Utils.md'},
+    { ugly: 'discordeno_bot.md', clean: 'Bot.md' },
+    { ugly: 'discordeno_gateway.md', clean: 'Gateway.md' },
+    { ugly: 'discordeno_rest.md', clean: 'Rest.md' },
+    { ugly: 'discordeno_types.md', clean: 'Types.md' },
+    { ugly: 'discordeno_utils.md', clean: 'Utils.md' },
     { ugly: 'discordeno_bot.' },
     { ugly: 'discordeno_gateway.' },
     { ugly: 'discordeno_rest.' },
@@ -59,7 +59,8 @@ for await (let filepath of walk(typedocOutPath)) {
     if (!filepath.endsWith(`${form.ugly}md`)) filepath = filepath.replace(new RegExp(form.ugly, 'gi'), form.clean || '')
   }
 
-  file = file.replace(/Promise<([^>]+)>/gi, 'Promise{$1}')
+  file = file.replace(/(?<!\\)(<|>|,|=|\{|\})/gi, `\\$1`)
+  file = file.replace(/(?<!README|modules)\.md/gi, '')
 
   if (file.includes('Promise<')) console.log('Removing Promise< failed')
 

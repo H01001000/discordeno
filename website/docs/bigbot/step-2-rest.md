@@ -51,7 +51,7 @@ const app = express()
 app.use(
   express.urlencoded({
     extended: true,
-  }),
+  })
 )
 
 app.use(express.json())
@@ -62,7 +62,9 @@ app.all('/*', async (req, res) => {
   }
 
   try {
-    const result = await REST.makeRequest(req.method, `${REST.baseUrl}${req.url}`, req.body)
+    const result = await REST.makeRequest(req.method, req.url.substring(4), {
+      body: req.method !== 'DELETE' && req.method !== 'GET' ? {} : req.body,
+    })
 
     if (result) {
       res.status(200).json(result)
@@ -103,7 +105,10 @@ const INFLUX_BUCKET = process.env.INFLUX_BUCKET as string
 const INFLUX_TOKEN = process.env.INFLUX_TOKEN as string
 const INFLUX_URL = process.env.INFLUX_URL as string
 
-export const influxDB = INFLUX_URL && INFLUX_TOKEN ? new InfluxDB({ url: INFLUX_URL, token: INFLUX_TOKEN }) : undefined
+export const influxDB =
+  INFLUX_URL && INFLUX_TOKEN
+    ? new InfluxDB({ url: INFLUX_URL, token: INFLUX_TOKEN })
+    : undefined
 export const Influx = influxDB?.getWriteApi(INFLUX_ORG, INFLUX_BUCKET)
 
 let savingAnalyticsId: NodeJS.Interval | undefined = undefined
@@ -114,7 +119,7 @@ if (!saveAnalyticsId) {
       .then(() => {
         console.log(`[Influx - REST] Saved events!`)
       })
-      .catch((error) => {
+      .catch(error => {
         console.log(`[Influx - REST] Error saving events!`, error)
       })
     // Every 30seconds
@@ -131,7 +136,11 @@ import { Influx } from './analytics.ts'
 Now, make sure to scroll to this line as we are going to work around this line now.
 
 ```ts
-const result = await REST.makeRequest(req.method, `${REST.baseUrl}${req.url}`, req.body)
+const result = await REST.makeRequest(
+  req.method,
+  `${REST.baseUrl}${req.url}`,
+  req.body
+)
 ```
 
 ```ts
@@ -141,9 +150,13 @@ Influx?.writePoint(
     .stringField('type', 'REQUEST_FETCHING')
     .tag('method', options.method)
     .tag('url', options.url)
-    .tag('bucket', options.bucketId ?? 'NA'),
+    .tag('bucket', options.bucketId ?? 'NA')
 )
-const result = await REST.makeRequest(req.method, `${REST.baseUrl}${req.url}`, req.body)
+const result = await REST.makeRequest(
+  req.method,
+  `${REST.baseUrl}${req.url}`,
+  req.body
+)
 ```
 
 This will add to the analytics whenever a request comes in. Then we should add another one for when a request is successful.
@@ -155,9 +168,13 @@ Influx?.writePoint(
     .stringField('type', 'REQUEST_FETCHING')
     .tag('method', options.method)
     .tag('url', options.url)
-    .tag('bucket', options.bucketId ?? 'NA'),
+    .tag('bucket', options.bucketId ?? 'NA')
 )
-const result = await REST.makeRequest(req.method, `${REST.baseUrl}${req.url}`, req.body)
+const result = await REST.makeRequest(
+  req.method,
+  `${REST.baseUrl}${req.url}`,
+  req.body
+)
 Influx?.writePoint(
   new Point('restEvents')
     .timestamp(new Date())
@@ -166,7 +183,7 @@ Influx?.writePoint(
     .tag('url', options.url)
     .tag('bucket', options.bucketId ?? 'NA')
     .intField('status', response.status)
-    .tag('statusText', response.statusText),
+    .tag('statusText', response.statusText)
 )
 ```
 
@@ -197,37 +214,62 @@ Now you will be able to take this data and implement it into Grafana. In a futur
 
 ### Multiple Custom Bot Proxy Rest
 
-For bot's that allow servers to buy custom bot's, you can create a separate manager for each bot's token/authorization. As a request comes in, either get a cached rest manager or create one if none exists in cache. You can add them to a Collection where the authorization or token is provided in the request, you can dynamically create rest managers for each bot token. This way each bot can handle their own requests in their own queues.
+For bot's that allow servers to buy custom bot's, you can create a separate manager for each bot's token/authorization. As a request comes in, either get a cached rest manager or create one if none exists in the cache.
+
+The plan in this guide is to create a custom header that is sent on every request to the rest process. This will contain the custom instances bot id so we can find it a collection on the rest process, which can be then be used to determine which bot token we will use.
 
 :::caution
 Having multiple bot's sending requests from one source will impact your global rate limit due to the global ip rate limit.
 :::
 
+In order to send the bot id inside of the request headers we first have to override the `createBaseHeaders()` function.
+
 ```ts
-const MANAGERS = new Collection<string, RestManager>();
+BOT.rest = createRestManager({
+  token: process.env.PUBLIC_BOT_TOKEN as string,
+})
+
+BOT.rest.createBaseHeaders = () => {
+  return {
+    'user-agent': `DiscordBot (https://github.com/discordeno/discordeno, v19.0.0-alpha.1)`,
+    bot_id: BOT.rest.applicationId.toString(),
+  }
+}
 ```
 
-Create this MANAGERS collection at the near the top of the file. Then we can begin implementing this in our request handler.  We are going to be changing this line:
+Create this MANAGERS collection somewhere near the top of the file. Then we can begin implementing this in our request handler.
+
+```ts
+const MANAGERS = new Collection<string, RestManager>()
+```
+
+We are going to be changing this line:
 
 ```ts
 try {
   const result = await REST.makeRequest(req.method, `${REST.baseUrl}${req.url}`, req.body)
 ```
 
+It is recommended to not needlessly send the bot token, instead you can store the bot token(s) on the rest process and use the botId to find token from the `MANAGERS` collection.
+
 It will become something like the following:
 
 ```ts
 try {
-  let manager = MANAGERS.get(req.headers.token);
-  if (!manager) {
+  let manager = MANAGERS.get(req.headers.bot_id);
+  if (!manager && BOT_TOKENS.has(req.headers.bot_id)) {
     // A request came in with a token that has no manager in cache
-    manager = createRestManager({ token: req.headers.token })
-    MANAGERS.set(req.headers.token, manager);
+    manager = createRestManager({ token: BOT_TOKENS.get(req.headers.bot_id) })
+    MANAGERS.set(req.headers.bot_id, manager);
   }
 
-  const result = await manager.makeRequest(req.method, `${manager.baseUrl}${req.url}`, req.body)
-```
+  const result = await manager.makeRequest(
+      req.method as RequestMethods,
+      `${manager.baseUrl}${req.url}`,
+      req.body
+    );
 
+```
 
 ### Evals
 
@@ -235,13 +277,13 @@ One of the last things we should do, is make it possible to run commands on this
 
 Let's make a small bot on this process. Make a file called `services/rest/bot.ts`. Then paste the code below.
 
-```ts
+````ts
 import { createBot } from '@discordeno/bot'
 import { logger } from '@discordeno/utils'
 import * as util from 'util'
 
 const inspectOptions = {
-  depth: 1
+  depth: 1,
 }
 
 const bot = createBot({
@@ -281,17 +323,26 @@ const bot = createBot({
         } catch (err) {
           value = err
         }
-        response.push(util.inspect(value, inspectOptions).replace(regex, 'YOU WISH!').substring(0, 1985))
+        response.push(
+          util
+            .inspect(value, inspectOptions)
+            .replace(regex, 'YOU WISH!')
+            .substring(0, 1985)
+        )
       } else {
-        response.push(String(util.inspect(result)).replace(regex, 'YOU WISH!').substring(0, 1985))
+        response.push(
+          String(util.inspect(result))
+            .replace(regex, 'YOU WISH!')
+            .substring(0, 1985)
+        )
       }
 
       response.push('```')
 
       await message.channel.createMessage(response.join('\n'))
-    }
-  }
+    },
+  },
 })
-```
+````
 
 Now that you have an eval command available on ur `REST` service, whenever you need to modify something quickly you can easily do so from ur developer server where this bot is. For example, should you want to switch to a newer api version, it is as simple as `.eval REST.version = xxx` where xxx is the new API version.

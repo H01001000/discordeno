@@ -1,649 +1,118 @@
 /* eslint-disable @typescript-eslint/restrict-template-expressions */
 /* eslint-disable no-const-assign */
-import { InteractionResponseTypes } from '@discordeno/types'
-import {
-  calculateBits,
-  camelize,
-  camelToSnakeCase,
-  delay,
-  encode,
-  getBotIdFromToken,
-  isGetMessagesAfter,
-  isGetMessagesAround,
-  isGetMessagesBefore,
-  isGetMessagesLimit,
-  logger,
-  processReactionString,
-  urlToBase64,
-} from '@discordeno/utils'
-import fetch from 'node-fetch'
+import { Buffer } from 'node:buffer'
+
+import { calculateBits, camelize, camelToSnakeCase, delay, getBotIdFromToken, logger, processReactionString, urlToBase64 } from '@discordeno/utils'
 
 import { createInvalidRequestBucket } from './invalidBucket.js'
 import { Queue } from './queue.js'
 
-import type {
-  BigString,
-  Camelize,
-  DiscordApplication,
-  DiscordApplicationCommand,
-  DiscordApplicationCommandPermissions,
-  DiscordAuditLog,
-  DiscordAutoModerationRule,
-  DiscordBan,
-  DiscordChannel,
-  DiscordEmoji,
-  DiscordFollowedChannel,
-  DiscordGetGatewayBot,
-  DiscordGuild,
-  DiscordGuildPreview,
-  DiscordGuildWidget,
-  DiscordGuildWidgetSettings,
-  DiscordIntegration,
-  DiscordInvite,
-  DiscordInviteMetadata,
-  DiscordListActiveThreads,
-  DiscordListArchivedThreads,
-  DiscordMember,
-  DiscordMemberWithUser,
-  DiscordMessage,
-  DiscordPrunedCount,
-  DiscordRole,
-  DiscordScheduledEvent,
-  DiscordStageInstance,
-  DiscordSticker,
-  DiscordStickerPack,
-  DiscordTemplate,
-  DiscordThreadMember,
-  DiscordUser,
-  DiscordVanityUrl,
-  DiscordVoiceRegion,
-  DiscordWebhook,
-  DiscordWelcomeScreen,
-  FileContent,
-  GetMessagesOptions,
-  GetScheduledEventUsers,
-  MfaLevels,
-  ModifyGuildTemplate,
+import {
+  InteractionResponseTypes,
+  type BigString,
+  type Camelize,
+  type DiscordAccessTokenResponse,
+  type DiscordApplication,
+  type DiscordApplicationCommand,
+  type DiscordApplicationRoleConnection,
+  type DiscordAuditLog,
+  type DiscordAutoModerationRule,
+  type DiscordBan,
+  type DiscordChannel,
+  type DiscordConnection,
+  type DiscordCurrentAuthorization,
+  type DiscordEmoji,
+  type DiscordEntitlement,
+  type DiscordFollowedChannel,
+  type DiscordGetGatewayBot,
+  type DiscordGuild,
+  type DiscordGuildApplicationCommandPermissions,
+  type DiscordGuildOnboarding,
+  type DiscordGuildPreview,
+  type DiscordGuildWidget,
+  type DiscordGuildWidgetSettings,
+  type DiscordIntegration,
+  type DiscordInvite,
+  type DiscordInviteMetadata,
+  type DiscordListActiveThreads,
+  type DiscordListArchivedThreads,
+  type DiscordMember,
+  type DiscordMemberWithUser,
+  type DiscordMessage,
+  type DiscordPartialGuild,
+  type DiscordPrunedCount,
+  type DiscordRole,
+  type DiscordScheduledEvent,
+  type DiscordSku,
+  type DiscordStageInstance,
+  type DiscordSticker,
+  type DiscordStickerPack,
+  type DiscordTemplate,
+  type DiscordThreadMember,
+  type DiscordUser,
+  type DiscordVanityUrl,
+  type DiscordVoiceRegion,
+  type DiscordWebhook,
+  type DiscordWelcomeScreen,
+  type MfaLevels,
+  type ModifyGuildTemplate,
 } from '@discordeno/types'
-import type { CreateRequestBodyOptions, CreateRestManagerOptions, RestManager, SendRequestOptions } from './types.js'
+import { createRoutes } from './routes.js'
+import type { CreateRequestBodyOptions, CreateRestManagerOptions, MakeRequestOptions, RestManager, SendRequestOptions } from './types.js'
 
 // TODO: make dynamic based on package.json file
 const version = '19.0.0-alpha.1'
 
+export const DISCORD_API_VERSION = 10
+export const DISCORD_API_URL = 'https://discord.com/api'
+
+export const AUDIT_LOG_REASON_HEADER = 'x-audit-log-reason'
+export const RATE_LIMIT_REMAINING_HEADER = 'x-ratelimit-remaining'
+export const RATE_LIMIT_RESET_AFTER_HEADER = 'x-ratelimit-reset-after'
+export const RATE_LIMIT_GLOBAL_HEADER = 'x-ratelimit-global'
+export const RATE_LIMIT_BUCKET_HEADER = 'x-ratelimit-bucket'
+export const RATE_LIMIT_LIMIT_HEADER = 'x-ratelimit-limit'
+export const RATE_LIMIT_SCOPE_HEADER = 'x-ratelimit-scope'
+
 export function createRestManager(options: CreateRestManagerOptions): RestManager {
-  // Falsy token string check
-  if (!options.token) throw new Error('You must provide a valid token.')
+  const applicationId = options.applicationId ? BigInt(options.applicationId) : options.token ? getBotIdFromToken(options.token) : undefined
+  if (!applicationId) {
+    throw new Error(
+      '`applicationId` was not provided and was not able to extract the id from the bots token. Please explicitly pass `applicationId` to the rest manager.',
+    )
+  }
+
+  const baseUrl = options.proxy?.baseUrl ?? DISCORD_API_URL
 
   const rest: RestManager = {
-    token: options.token,
-    applicationId: options.applicationId ? BigInt(options.applicationId) : getBotIdFromToken(options.token),
-    version: options.version ?? 10,
-    baseUrl: options.proxy?.baseUrl ?? 'https://discord.com/api',
-    maxRetryCount: Infinity,
-    globallyRateLimited: false,
-    processingRateLimitedPaths: false,
+    applicationId,
+    authorization: options.proxy?.authorization,
+    authorizationHeader: options.proxy?.authorizationHeader ?? 'authorization',
+    baseUrl,
     deleteQueueDelay: 60000,
+    globallyRateLimited: false,
+    invalidBucket: createInvalidRequestBucket({}),
+    isProxied: !baseUrl.startsWith(DISCORD_API_URL),
+    maxRetryCount: Infinity,
+    processingRateLimitedPaths: false,
     queues: new Map(),
     rateLimitedPaths: new Map(),
-    invalidBucket: createInvalidRequestBucket({}),
-    authorization: options.proxy?.authorization,
-
-    routes: {
-      webhooks: {
-        id: (webhookId) => {
-          return `/webhooks/${webhookId}`
-        },
-        message: (webhookId, token, messageId, options) => {
-          let url = `/webhooks/${webhookId}/${token}/messages/${messageId}?`
-
-          if (options) {
-            if (options.threadId) url += `thread_id=${options.threadId}`
-          }
-
-          return url
-        },
-        original: (webhookId, token, options) => {
-          let url = `/webhooks/${webhookId}/${token}/messages/@original?`
-
-          if (options) {
-            if (options.threadId) url += `thread_id=${options.threadId}`
-          }
-
-          return url
-        },
-        webhook: (webhookId, token, options) => {
-          let url = `/webhooks/${webhookId}/${token}?`
-
-          if (options) {
-            if (options?.wait !== undefined) url += `wait=${options.wait.toString()}`
-            if (options.threadId) url += `thread_id=${options.threadId}`
-          }
-
-          return url
-        },
-      },
-
-      // Miscellaneous Endpoints
-      sessionInfo: () => rest.routes.gatewayBot(),
-
-      // Channel Endpoints
-      channels: {
-        bulk: (channelId) => {
-          return `/channels/${channelId}/messages/bulk-delete`
-        },
-        dm: () => {
-          return '/users/@me/channels'
-        },
-        pin: (channelId, messageId) => {
-          return `/channels/${channelId}/pins/${messageId}`
-        },
-        pins: (channelId) => {
-          return `/channels/${channelId}/pins`
-        },
-        reactions: {
-          bot: (channelId, messageId, emoji) => {
-            return `/channels/${channelId}/messages/${messageId}/reactions/${encodeURIComponent(emoji)}/@me`
-          },
-          user: (channelId, messageId, emoji, userId) => {
-            return `/channels/${channelId}/messages/${messageId}/reactions/${encodeURIComponent(emoji)}/${userId}`
-          },
-          all: (channelId, messageId) => {
-            return `/channels/${channelId}/messages/${messageId}/reactions`
-          },
-          emoji: (channelId, messageId, emoji, options) => {
-            let url = `/channels/${channelId}/messages/${messageId}/reactions/${encodeURIComponent(emoji)}?`
-
-            if (options) {
-              // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-              if (options.after) url += `after=${options.after}`
-              // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-              if (options.limit) url += `&limit=${options.limit}`
-            }
-
-            return url
-          },
-          message: (channelId, messageId, emoji, options) => {
-            let url = `/channels/${channelId}/messages/${messageId}/reactions/${encodeURIComponent(emoji)}?`
-
-            if (options) {
-              // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-              if (options.after) url += `after=${options.after}`
-              // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-              if (options.limit) url += `&limit=${options.limit}`
-            }
-
-            return url
-          },
-        },
-        webhooks: (channelId) => {
-          return `/channels/${channelId}/webhooks`
-        },
-
-        channel: (channelId) => {
-          return `/channels/${channelId}`
-        },
-
-        follow: (channelId) => {
-          return `/channels/${channelId}/followers`
-        },
-
-        forum: (channelId) => {
-          return `/channels/${channelId}/threads?has_message=true`
-        },
-
-        invites: (channelId) => {
-          return `/channels/${channelId}/invites`
-        },
-
-        message: (channelId, messageId) => {
-          return `/channels/${channelId}/messages/${messageId}`
-        },
-
-        messages: (channelId, options?: GetMessagesOptions) => {
-          let url = `/channels/${channelId}/messages?`
-
-          if (options) {
-            if (isGetMessagesAfter(options) && options.after) {
-              url += `after=${options.after}`
-            }
-            if (isGetMessagesBefore(options) && options.before) {
-              url += `&before=${options.before}`
-            }
-            if (isGetMessagesAround(options) && options.around) {
-              url += `&around=${options.around}`
-            }
-            if (isGetMessagesLimit(options) && options.limit) {
-              url += `&limit=${options.limit}`
-            }
-          }
-
-          return url
-        },
-
-        overwrite: (channelId, overwriteId) => {
-          return `/channels/${channelId}/permissions/${overwriteId}`
-        },
-
-        crosspost: (channelId, messageId) => {
-          return `/channels/${channelId}/messages/${messageId}/crosspost`
-        },
-
-        stages: () => {
-          return '/stage-instances'
-        },
-
-        stage: (channelId) => {
-          return `/stage-instances/${channelId}`
-        },
-
-        // Thread Endpoints
-        threads: {
-          message: (channelId, messageId) => {
-            return `/channels/${channelId}/messages/${messageId}/threads`
-          },
-          all: (channelId) => {
-            return `/channels/${channelId}/threads`
-          },
-          active: (guildId) => {
-            return `/guilds/${guildId}/threads/active`
-          },
-          members: (channelId) => {
-            return `/channels/${channelId}/thread-members`
-          },
-          me: (channelId) => {
-            return `/channels/${channelId}/thread-members/@me`
-          },
-          user: (channelId, userId) => {
-            return `/channels/${channelId}/thread-members/${userId}`
-          },
-          archived: (channelId) => {
-            return `/channels/${channelId}/threads/archived`
-          },
-          public: (channelId, options) => {
-            let url = `/channels/${channelId}/threads/archived/public?`
-
-            if (options) {
-              if (options.before) {
-                url += `before=${new Date(options.before).toISOString()}`
-              }
-              // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-              if (options.limit) url += `&limit=${options.limit}`
-            }
-
-            return url
-          },
-          private: (channelId, options) => {
-            let url = `/channels/${channelId}/threads/archived/private?`
-
-            if (options) {
-              if (options.before) {
-                url += `before=${new Date(options.before).toISOString()}`
-              }
-              // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-              if (options.limit) url += `&limit=${options.limit}`
-            }
-
-            return url
-          },
-          joined: (channelId, options) => {
-            let url = `/channels/${channelId}/users/@me/threads/archived/private?`
-
-            if (options) {
-              if (options.before) {
-                url += `before=${new Date(options.before).toISOString()}`
-              }
-              // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-              if (options.limit) url += `&limit=${options.limit}`
-            }
-
-            return url
-          },
-        },
-
-        typing: (channelId) => {
-          return `/channels/${channelId}/typing`
-        },
-      },
-
-      // Guild Endpoints
-      guilds: {
-        all: () => {
-          return '/guilds'
-        },
-        auditlogs: (guildId, options) => {
-          let url = `/guilds/${guildId}/audit-logs?`
-
-          if (options) {
-            // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-            if (options.actionType) url += `action_type=${options.actionType}`
-            // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-            if (options.before) url += `&before=${options.before}`
-            // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-            if (options.after) url += `&after=${options.after}`
-            // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-            if (options.limit) url += `&limit=${options.limit}`
-            // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-            if (options.userId) url += `&user_id=${options.userId}`
-          }
-
-          return url
-        },
-        automod: {
-          rule: (guildId, ruleId) => {
-            return `/guilds/${guildId}/auto-moderation/rules/${ruleId}`
-          },
-          rules: (guildId) => {
-            return `/guilds/${guildId}/auto-moderation/rules`
-          },
-        },
-        channels: (guildId) => {
-          return `/guilds/${guildId}/channels`
-        },
-        emoji: (guildId, emojiId) => {
-          return `/guilds/${guildId}/emojis/${emojiId}`
-        },
-        emojis: (guildId) => {
-          return `/guilds/${guildId}/emojis`
-        },
-        events: {
-          events: (guildId, withUserCount?: boolean) => {
-            let url = `/guilds/${guildId}/scheduled-events?`
-
-            if (withUserCount !== undefined) {
-              url += `with_user_count=${withUserCount.toString()}`
-            }
-            return url
-          },
-          event: (guildId, eventId, withUserCount?: boolean) => {
-            let url = `/guilds/${guildId}/scheduled-events/${eventId}`
-
-            if (withUserCount !== undefined) {
-              url += `with_user_count=${withUserCount.toString()}`
-            }
-
-            return url
-          },
-          users: (guildId, eventId, options?: GetScheduledEventUsers) => {
-            let url = `/guilds/${guildId}/scheduled-events/${eventId}/users?`
-
-            if (options) {
-              // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-              if (options.limit !== undefined) url += `limit=${options.limit}`
-              if (options.withMember !== undefined) {
-                // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-                url += `&with_member=${options.withMember.toString()}`
-              }
-              // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-              if (options.after !== undefined) url += `&after=${options.after}`
-              // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-              if (options.before !== undefined) url += `&before=${options.before}`
-            }
-
-            return url
-          },
-        },
-        guild(guildId, withCounts) {
-          let url = `/guilds/${guildId}?`
-
-          if (withCounts !== undefined) {
-            url += `with_counts=${withCounts.toString()}`
-          }
-
-          return url
-        },
-        integration(guildId, integrationId) {
-          return `/guilds/${guildId}/integrations/${integrationId}`
-        },
-        integrations: (guildId) => {
-          return `/guilds/${guildId}/integrations?include_applications=true`
-        },
-        invite(inviteCode, options) {
-          let url = `/invites/${inviteCode}?`
-
-          if (options) {
-            if (options.withCounts !== undefined) {
-              // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-              url += `with_counts=${options.withCounts.toString()}`
-            }
-            if (options.withExpiration !== undefined) {
-              // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-              url += `&with_expiration=${options.withExpiration.toString()}`
-            }
-            if (options.scheduledEventId) {
-              // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-              url += `&guild_scheduled_event_id=${options.scheduledEventId}`
-            }
-          }
-
-          return url
-        },
-        invites: (guildId) => {
-          return `/guilds/${guildId}/invites`
-        },
-        leave: (guildId) => {
-          return `/users/@me/guilds/${guildId}`
-        },
-        members: {
-          ban: (guildId, userId) => {
-            return `/guilds/${guildId}/bans/${userId}`
-          },
-          bans: (guildId, options) => {
-            let url = `/guilds/${guildId}/bans?`
-
-            if (options) {
-              // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-              if (options.limit) url += `limit=${options.limit}`
-              // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-              if (options.after) url += `&after=${options.after}`
-              // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-              if (options.before) url += `&before=${options.before}`
-            }
-
-            return url
-          },
-          bot: (guildId) => {
-            return `/guilds/${guildId}/members/@me`
-          },
-          member: (guildId, userId) => {
-            return `/guilds/${guildId}/members/${userId}`
-          },
-          members: (guildId, options) => {
-            let url = `/guilds/${guildId}/members?`
-
-            if (options !== undefined) {
-              // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-              if (options.limit) url += `limit=${options.limit}`
-              // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-              if (options.after) url += `&after=${options.after}`
-            }
-
-            return url
-          },
-          search: (guildId, query, options) => {
-            let url = `/guilds/${guildId}/members/search?query=${encodeURIComponent(query)}`
-
-            if (options) {
-              if (options.limit !== undefined) url += `&limit=${options.limit}`
-            }
-
-            return url
-          },
-          prune: (guildId, options) => {
-            let url = `/guilds/${guildId}/prune?`
-
-            if (options) {
-              // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-              if (options.days) url += `days=${options.days}`
-              if (Array.isArray(options.includeRoles)) {
-                // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-                url += `&include_roles=${options.includeRoles.join(',')}`
-              } else if (options.includeRoles) {
-                // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-                url += `&include_roles=${options.includeRoles}`
-              }
-            }
-
-            return url
-          },
-        },
-        mfa: (guildId) => `/guilds/${guildId}/mfa`,
-        preview: (guildId) => {
-          return `/guilds/${guildId}/preview`
-        },
-        prune: (guildId, options) => {
-          let url = `/guilds/${guildId}/prune?`
-
-          if (options) {
-            // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-            if (options.days) url += `days=${options.days}`
-            if (Array.isArray(options.includeRoles)) {
-              // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-              url += `&include_roles=${options.includeRoles.join(',')}`
-            } else if (options.includeRoles) {
-              // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-              url += `&include_roles=${options.includeRoles}`
-            }
-          }
-
-          return url
-        },
-        roles: {
-          one: (guildId, roleId) => {
-            return `/guilds/${guildId}/roles/${roleId}`
-          },
-          all: (guildId) => {
-            return `/guilds/${guildId}/roles`
-          },
-          member: (guildId, memberId, roleId) => {
-            return `/guilds/${guildId}/members/${memberId}/roles/${roleId}`
-          },
-        },
-        stickers: (guildId) => {
-          return `/guilds/${guildId}/stickers`
-        },
-        sticker: (guildId, stickerId) => {
-          return `/guilds/${guildId}/stickers/${stickerId}`
-        },
-        voice: (guildId, userId) => {
-          return `/guilds/${guildId}/voice-states/${userId ?? '@me'}`
-        },
-        templates: {
-          code: (code) => {
-            return `/guilds/templates/${code}`
-          },
-          guild: (guildId, code) => {
-            return `/guilds/${guildId}/templates/${code}`
-          },
-          all: (guildId) => {
-            return `/guilds/${guildId}/templates`
-          },
-        },
-        vanity: (guildId) => {
-          return `/guilds/${guildId}/vanity-url`
-        },
-        regions: (guildId) => {
-          return `/guilds/${guildId}/regions`
-        },
-        webhooks: (guildId) => {
-          return `/guilds/${guildId}/webhooks`
-        },
-        welcome: (guildId) => {
-          return `/guilds/${guildId}/welcome-screen`
-        },
-        widget: (guildId) => {
-          return `/guilds/${guildId}/widget`
-        },
-        widgetJson: (guildId) => {
-          return `/guilds/${guildId}/widget.json`
-        },
-      },
-
-      sticker: (stickerId: BigString) => {
-        return `/stickers/${stickerId}`
-      },
-
-      regions: () => {
-        return '/voice/regions'
-      },
-
-      // Interaction Endpoints
-      interactions: {
-        commands: {
-          // Application Endpoints
-          commands: (applicationId) => {
-            return `/applications/${applicationId}/commands`
-          },
-
-          guilds: {
-            all(applicationId, guildId) {
-              return `/applications/${applicationId}/guilds/${guildId}/commands`
-            },
-
-            one(applicationId, guildId, commandId, withLocalizations) {
-              let url = `/applications/${applicationId}/guilds/${guildId}/commands/${commandId}?`
-
-              if (withLocalizations !== undefined) {
-                url += `with_localizations=${withLocalizations.toString()}`
-              }
-
-              return url
-            },
-          },
-          permissions: (applicationId, guildId) => {
-            return `/applications/${applicationId}/guilds/${guildId}/commands/permissions`
-          },
-          permission: (applicationId, guildId, commandId) => {
-            return `/applications/${applicationId}/guilds/${guildId}/commands/${commandId}/permissions`
-          },
-          command: (applicationId, commandId, withLocalizations) => {
-            let url = `/applications/${applicationId}/commands/${commandId}?`
-
-            if (withLocalizations !== undefined) {
-              url += `withLocalizations=${withLocalizations.toString()}`
-            }
-
-            return url
-          },
-        },
-
-        responses: {
-          // Interaction Endpoints
-          callback: (interactionId, token) => {
-            return `/interactions/${interactionId}/${token}/callback`
-          },
-          original: (interactionId, token) => {
-            return `/webhooks/${interactionId}/${token}/messages/@original`
-          },
-          message: (applicationId, token, messageId) => {
-            return `/webhooks/${applicationId}/${token}/messages/${messageId}`
-          },
-        },
-      },
-
-      // User endpoints
-      user(userId) {
-        return `/users/${userId}`
-      },
-
-      userBot() {
-        return '/users/@me'
-      },
-
-      oauth2Application() {
-        return 'oauth2/applications/@me'
-      },
-
-      gatewayBot() {
-        return '/gateway/bot'
-      },
-
-      nitroStickerPacks() {
-        return '/sticker-packs'
-      },
+    token: options.token,
+    version: options.version ?? DISCORD_API_VERSION,
+
+    routes: createRoutes(),
+
+    createBaseHeaders() {
+      return {
+        'user-agent': `DiscordBot (https://github.com/discordeno/discordeno, v${version})`,
+      }
     },
 
-    checkRateLimits(url) {
-      const ratelimited = rest.rateLimitedPaths.get(url)
+    checkRateLimits(url, headers) {
+      const authHeader = headers?.authorization ?? ''
+
+      const ratelimited = rest.rateLimitedPaths.get(`${authHeader}${url}`)
+
       const global = rest.rateLimitedPaths.get('global')
       const now = Date.now()
 
@@ -669,18 +138,29 @@ export function createRestManager(options: CreateRestManagerOptions): RestManage
         const newObj: any = {}
 
         for (const key of Object.keys(obj)) {
-          // Keys that dont require snake casing
-          if (['permissions', 'allow', 'deny'].includes(key)) {
-            newObj[key] = calculateBits(obj[key])
-            continue
+          const value = obj[key]
+
+          // Some falsy values should be allowed like null or 0
+          if (value !== undefined) {
+            switch (key) {
+              case 'permissions':
+              case 'allow':
+              case 'deny':
+                newObj[key] = typeof value === 'string' ? value : calculateBits(value)
+                continue
+              case 'defaultMemberPermissions':
+                newObj.default_member_permissions = typeof value === 'string' ? value : calculateBits(value)
+                continue
+              case 'nameLocalizations':
+                newObj.name_localizations = value
+                continue
+              case 'descriptionLocalizations':
+                newObj.description_localizations = value
+                continue
+            }
           }
 
-          if (key === 'defaultMemberPermissions') {
-            newObj.default_member_permissions = calculateBits(obj[key])
-            continue
-          }
-
-          newObj[camelToSnakeCase(key)] = rest.changeToDiscordFormat(obj[key])
+          newObj[camelToSnakeCase(key)] = rest.changeToDiscordFormat(value)
         }
 
         return newObj
@@ -691,16 +171,14 @@ export function createRestManager(options: CreateRestManagerOptions): RestManage
       return obj
     },
 
-    createRequest(options) {
-      const headers: Record<string, string> = {
-        'user-agent': `DiscordBot (https://github.com/discordeno/discordeno, v${version})`,
-      }
+    createRequestBody(method, options) {
+      const headers = this.createBaseHeaders()
 
-      if (!options.unauthorized) headers.authorization = `Bot ${rest.token}`
+      if (options?.unauthorized !== true) headers.authorization = `Bot ${rest.token}`
 
       // IF A REASON IS PROVIDED ENCODE IT IN HEADERS
-      if (options.reason !== undefined) {
-        headers['x-audit-log-reason'] = encodeURIComponent(options.reason)
+      if (options?.reason !== undefined) {
+        headers[AUDIT_LOG_REASON_HEADER] = encodeURIComponent(options?.reason)
       }
 
       let body: string | FormData | undefined
@@ -709,38 +187,47 @@ export function createRestManager(options: CreateRestManagerOptions): RestManage
       // Since GET does not allow bodies
 
       // Have to check for attachments first, since body then has to be send in a different way.
-      if (options.attachments !== undefined) {
+      if (options?.files !== undefined) {
         const form = new FormData()
-        for (let i = 0; i < options.attachments.length; ++i) {
-          form.append(`file${i}`, options.attachments[i].blob, options.attachments[i].name)
+        for (let i = 0; i < options.files.length; ++i) {
+          form.append(`file${i}`, options.files[i].blob, options.files[i].name)
         }
 
-        form.append('payload_json', JSON.stringify(options.body))
+        // Have to use changeToDiscordFormat or else JSON.stringify may throw an error for the presence of BigInt(s) in the json
+        form.append('payload_json', JSON.stringify(rest.changeToDiscordFormat({ ...options.body, files: undefined })))
 
+        // No need to set the `content-type` header since `fetch` does that automatically for us when we use a `FormData` object.
         body = form
+      } else if (options?.body && options.headers && options.headers['content-type'] === 'application/x-www-form-urlencoded') {
+        // OAuth2 body handling
+        const formBody: string[] = []
 
-        // TODO: boundary?
-        // `multipart/form-data; boundary=${form.getBoundary()}`
-        headers['content-type'] = `multipart/form-data`
-      } else if (options.body !== undefined) {
+        const discordBody = rest.changeToDiscordFormat(options.body)
+
+        for (const prop in discordBody) {
+          formBody.push(`${encodeURIComponent(prop)}=${encodeURIComponent(discordBody[prop])}`)
+        }
+
+        body = formBody.join('&')
+      } else if (options?.body !== undefined) {
         if (options.body instanceof FormData) {
           body = options.body
-          headers['content-type'] = `multipart/form-data`
+          // No need to set the `content-type` header since `fetch` does that automatically for us when we use a `FormData` object.
         } else {
-          body = JSON.stringify(options.body)
+          body = JSON.stringify(rest.changeToDiscordFormat(options.body))
           headers['content-type'] = `application/json`
         }
       }
 
       // SOMETIMES SPECIAL HEADERS (E.G. CUSTOM AUTHORIZATION) NEED TO BE USED
-      if (options.headers) {
+      if (options?.headers) {
         Object.assign(headers, options.headers)
       }
 
       return {
         body,
         headers,
-        method: options.method,
+        method,
       }
     },
 
@@ -776,19 +263,19 @@ export function createRestManager(options: CreateRestManagerOptions): RestManage
     },
 
     /** Processes the rate limit headers and determines if it needs to be rate limited and returns the bucket id if available */
-    processHeaders(url, headers) {
+    processHeaders(url, headers, requestAuthorization) {
       let rateLimited = false
 
       // GET ALL NECESSARY HEADERS
-      const remaining = headers.get('x-ratelimit-remaining')
-      const retryAfter = headers.get('x-ratelimit-reset-after')
+      const remaining = headers.get(RATE_LIMIT_REMAINING_HEADER)
+      const retryAfter = headers.get(RATE_LIMIT_RESET_AFTER_HEADER)
       const reset = Date.now() + Number(retryAfter) * 1000
-      const global = headers.get('x-ratelimit-global')
+      const global = headers.get(RATE_LIMIT_GLOBAL_HEADER)
       // undefined override null needed for typings
-      const bucketId = headers.get('x-ratelimit-bucket') ?? undefined
-      const limit = headers.get('x-ratelimit-limit')
+      const bucketId = headers.get(RATE_LIMIT_BUCKET_HEADER) ?? undefined
+      const limit = headers.get(RATE_LIMIT_LIMIT_HEADER)
 
-      rest.queues.get(url)?.handleCompletedRequest({
+      rest.queues.get(`${requestAuthorization}${url}`)?.handleCompletedRequest({
         remaining: remaining ? Number(remaining) : undefined,
         interval: retryAfter ? Number(retryAfter) * 1000 : undefined,
         max: limit ? Number(limit) : undefined,
@@ -799,7 +286,7 @@ export function createRestManager(options: CreateRestManagerOptions): RestManage
         rateLimited = true
 
         // SAVE THE URL AS LIMITED, IMPORTANT FOR NEW REQUESTS BY USER WITHOUT BUCKET
-        rest.rateLimitedPaths.set(url, {
+        rest.rateLimitedPaths.set(`${requestAuthorization}${url}`, {
           url,
           resetTimestamp: reset,
           bucketId,
@@ -807,7 +294,7 @@ export function createRestManager(options: CreateRestManagerOptions): RestManage
 
         // SAVE THE BUCKET AS LIMITED SINCE DIFFERENT URLS MAY SHARE A BUCKET
         if (bucketId) {
-          rest.rateLimitedPaths.set(bucketId, {
+          rest.rateLimitedPaths.set(`${requestAuthorization}${bucketId}`, {
             url,
             resetTimestamp: reset,
             bucketId,
@@ -817,8 +304,8 @@ export function createRestManager(options: CreateRestManagerOptions): RestManage
 
       // IF THERE IS NO REMAINING GLOBAL LIMIT, MARK IT RATE LIMITED GLOBALLY
       if (global) {
-        const retryAfter = headers.get('retry-after')
-        const globalReset = Date.now() + Number(retryAfter) * 1000
+        const retryAfter = Number(headers.get('retry-after')) * 1000
+        const globalReset = Date.now() + retryAfter
         //   rest.debug(
         // `[REST = Globally Rate Limited] URL: ${url} | Global Rest: ${globalReset}`
         //   )
@@ -827,7 +314,7 @@ export function createRestManager(options: CreateRestManagerOptions): RestManage
 
         setTimeout(() => {
           rest.globallyRateLimited = false
-        }, globalReset)
+        }, retryAfter)
 
         rest.rateLimitedPaths.set('global', {
           url: 'global',
@@ -836,7 +323,7 @@ export function createRestManager(options: CreateRestManagerOptions): RestManage
         })
 
         if (bucketId) {
-          rest.rateLimitedPaths.set(bucketId, {
+          rest.rateLimitedPaths.set(`${requestAuthorization}${bucketId}`, {
             url: 'global',
             resetTimestamp: globalReset,
             bucketId,
@@ -851,54 +338,76 @@ export function createRestManager(options: CreateRestManagerOptions): RestManage
     },
 
     async sendRequest(options) {
-      const url = options.url.startsWith('https://') ? options.url : `${rest.baseUrl}/v${rest.version}${options.url}`
-      const payload = rest.createRequest({ method: options.method, url: options.url, body: options.options?.body, ...options.options })
+      const url = `${rest.baseUrl}/v${rest.version}${options.route}`
+      const payload = rest.createRequestBody(options.method, options.requestBodyOptions)
 
-      logger.debug(`sending request to ${url}`, 'with payload:', { ...payload, headers: { ...payload.headers, authorization: 'Bot tokenhere' } })
-      const response = await fetch(url, payload)
-      logger.debug(`request fetched from ${url} with status ${response.status} & ${response.statusText}`)
+      const loggingHeaders = { ...payload.headers }
 
-      // Set the bucket id if it was available on the headers
-      const bucketId = rest.processHeaders(rest.simplifyUrl(options.url, options.method), response.headers)
-      if (bucketId) options.bucketId = bucketId
+      const authenticationScheme = payload.headers.authorization?.split(' ')[0]
 
-      if (response.status < 200 || response.status >= 400) {
-        logger.debug(`Request to ${url} failed.`)
-
-        if (response.status === 429) {
-          logger.debug(`Request to ${url} was ratelimited.`)
-          // Too many attempts, get rid of request from queue.
-          if (options.retryCount++ >= rest.maxRetryCount) {
-            logger.debug(`Request to ${url} exceeded the maximum allowed retries.`, 'with payload:', payload)
-            // rest.debug(`[REST - RetriesMaxed] ${JSON.stringify(options)}`)
-            // Remove item from queue to prevent retry
-            options.reject({
-              ok: false,
-              status: response.status,
-              error: 'The options was rate limited and it maxed out the retries limit.',
-            })
-            return
-          }
-
-          // Rate limited, add back to queue
-          rest.invalidBucket.handleCompletedRequest(response.status, response.headers.get('X-RateLimit-Scope') === 'shared')
-
-          const resetAfter = response.headers.get('x-ratelimit-reset-after')
-          if (resetAfter) await delay(Number(resetAfter) * 1000)
-          // process the response to prevent mem leak
-          await response.json()
-
-          return await options.retryRequest?.(options)
-        }
-
-        options.reject({ ok: false, status: response.status, body: JSON.stringify(await response.json()) })
-        return
+      if (payload.headers.authorization) {
+        loggingHeaders.authorization = `${authenticationScheme} tokenhere`
       }
 
-      const is204 = response.status === 204
-      const json = is204 ? undefined : await response.json()
-      // Discord sometimes sends no response with 204 code
-      options.resolve({ ok: true, status: response.status, body: JSON.stringify(json) })
+      logger.debug(`sending request to ${url}`, 'with payload:', { ...payload, headers: loggingHeaders })
+      const response = await fetch(url, payload).catch(async (error) => {
+        logger.error(error)
+        // Mark request and completed
+        rest.invalidBucket.handleCompletedRequest(999, false)
+        options.reject({
+          ok: false,
+          status: 999,
+          error: 'Possible network or request shape issue occurred. If this is rare, its a network glitch. If it occurs a lot something is wrong.',
+        })
+        throw error
+      })
+      logger.debug(`request fetched from ${url} with status ${response.status} & ${response.statusText}`)
+
+      // Mark request and completed
+      rest.invalidBucket.handleCompletedRequest(response.status, response.headers.get(RATE_LIMIT_SCOPE_HEADER) === 'shared')
+
+      // Set the bucket id if it was available on the headers
+      const bucketId = rest.processHeaders(
+        rest.simplifyUrl(options.route, options.method),
+        response.headers,
+        authenticationScheme === 'Bearer' ? payload.headers.authorization : '',
+      )
+      if (bucketId) options.bucketId = bucketId
+
+      if (response.status < HttpResponseCode.Success || response.status >= HttpResponseCode.Error) {
+        logger.debug(`Request to ${url} failed.`)
+
+        if (response.status !== HttpResponseCode.TooManyRequests) {
+          options.reject({ ok: false, status: response.status, body: await response.text() })
+          return
+        }
+
+        logger.debug(`Request to ${url} was ratelimited.`)
+        // Too many attempts, get rid of request from queue.
+        if (options.retryCount >= rest.maxRetryCount) {
+          logger.debug(`Request to ${url} exceeded the maximum allowed retries.`, 'with payload:', payload)
+          // rest.debug(`[REST - RetriesMaxed] ${JSON.stringify(options)}`)
+          options.reject({
+            ok: false,
+            status: response.status,
+            error: 'The request was rate limited and it maxed out the retries limit.',
+          })
+
+          return
+        }
+
+        options.retryCount += 1
+
+        const resetAfter = response.headers.get(RATE_LIMIT_RESET_AFTER_HEADER)
+        if (resetAfter) await delay(Number(resetAfter) * 1000)
+        // process the response to prevent mem leak
+        await response.arrayBuffer()
+
+        return await options.retryRequest?.(options)
+      }
+
+      // Discord sometimes sends no response with no content.
+      options.resolve({ ok: true, status: response.status, body: response.status === HttpResponseCode.NoContent ? undefined : await response.text() })
     },
 
     simplifyUrl(url, method) {
@@ -928,62 +437,41 @@ export function createRestManager(options: CreateRestManagerOptions): RestManage
       return parts.join('/')
     },
 
-    processRequest(request: SendRequestOptions) {
-      const route = request.url.substring(request.url.indexOf('api/'))
-      const parts = route.split('/')
-      // Remove the api/
-      parts.shift()
-      // Removes the /v#/
-      if (parts[0]?.startsWith('v')) parts.shift()
-      // Set the full url to discord api in case it was recieved in a proxy rest
-      request.url = `${rest.baseUrl}/v${rest.version}/${parts.join('/')}`
+    async processRequest(request: SendRequestOptions) {
+      const url = rest.simplifyUrl(request.route, request.method)
 
-      const url = rest.simplifyUrl(request.url, request.method)
-      const queue = rest.queues.get(url)
+      if (request.runThroughQueue === false) {
+        await rest.sendRequest(request)
+
+        return
+      }
+
+      const authHeader = request.requestBodyOptions?.headers?.authorization ?? ''
+
+      const queue = rest.queues.get(`${authHeader}${url}`)
 
       if (queue !== undefined) {
         queue.makeRequest(request)
       } else {
         // CREATES A NEW QUEUE
-        const bucketQueue = new Queue(rest, { url, deleteQueueDelay: rest.deleteQueueDelay })
+        const bucketQueue = new Queue(rest, { url, deleteQueueDelay: rest.deleteQueueDelay, authentication: authHeader })
 
         // Add request to queue
         bucketQueue.makeRequest(request)
         // Save queue
-        rest.queues.set(url, bucketQueue)
+        rest.queues.set(`${authHeader}${url}`, bucketQueue)
       }
     },
 
-    async makeRequest(method, url, options) {
-      if (!rest.baseUrl.startsWith('https://discord.com') && url[0] === '/') {
-        // Special handling for sending blobs across http to proxy
-        // TODO: fix this hacky handling
-        if (!(options?.body instanceof FormData) && !Array.isArray(options?.body) && options?.body?.file) {
-          if (!Array.isArray(options.body.file)) {
-            options.body.file = [options.body.file]
-          }
-          // convert blobs to string before sending to proxy
-          options.body.file = await Promise.all(
-            (options.body.file as FileContent[]).map(async (f: FileContent) => {
-              const url = encode(await f.blob.arrayBuffer())
-
-              return { name: f.name, blob: `data:${f.blob.type};base64,${url}` }
-            }),
-          )
+    async makeRequest(method, route, options) {
+      if (rest.isProxied) {
+        if (rest.authorization !== undefined) {
+          options ??= {}
+          options.headers ??= {}
+          options.headers[rest.authorizationHeader] = rest.authorization
         }
 
-        const headers: HeadersInit = {
-          Authorization: rest.authorization ?? '',
-        }
-        if (options?.body) {
-          headers['Content-Type'] = 'application/json'
-        }
-
-        const result = await fetch(`${rest.baseUrl}${url}`, {
-          body: options?.body ? JSON.stringify(options.body) : undefined,
-          headers,
-          method,
-        })
+        const result = await fetch(`${rest.baseUrl}/v${rest.version}${route}`, rest.createRequestBody(method, options))
 
         if (!result.ok) {
           const err = (await result.json().catch(() => {})) as Record<string, any>
@@ -992,46 +480,48 @@ export function createRestManager(options: CreateRestManagerOptions): RestManage
           throw new Error(JSON.stringify(err))
         }
 
-        return result.status !== 204 ? ((await result.json()) as any) : undefined
+        return result.status !== 204 ? await result.json() : undefined
       }
 
-      return await new Promise((resolve, reject) => {
+      // eslint-disable-next-line no-async-promise-executor
+      return await new Promise(async (resolve, reject) => {
         const payload: SendRequestOptions = {
-          url,
+          route,
           method,
-          options,
+          requestBodyOptions: options,
           retryCount: 0,
           retryRequest: async function (payload: SendRequestOptions) {
-            rest.processRequest(payload)
+            await rest.processRequest(payload)
           },
           resolve: (data) => {
             resolve(data.status !== 204 ? JSON.parse(data.body ?? '{}') : undefined)
           },
           reject,
+          runThroughQueue: options?.runThroughQueue,
         }
 
-        rest.processRequest(payload)
+        await rest.processRequest(payload)
       })
     },
 
-    async get<T = Record<string, unknown>>(url: string, body?: Omit<CreateRequestBodyOptions, 'body' | 'method'>) {
-      return camelize(await rest.makeRequest('GET', url, { body })) as Camelize<T>
+    async get<T = Record<string, unknown>>(url: string, options?: Omit<CreateRequestBodyOptions, 'body' | 'method'>) {
+      return camelize(await rest.makeRequest('GET', url, options)) as Camelize<T>
     },
 
-    async post<T = Record<string, unknown>>(url: string, body?: Omit<CreateRequestBodyOptions, 'body' | 'method'>) {
-      return camelize(await rest.makeRequest('POST', url, { body })) as Camelize<T>
+    async post<T = Record<string, unknown>>(url: string, options?: Omit<CreateRequestBodyOptions, 'body' | 'method'>) {
+      return camelize(await rest.makeRequest('POST', url, options)) as Camelize<T>
     },
 
-    async delete(url: string, body?: Omit<CreateRequestBodyOptions, 'body' | 'method'>) {
-      camelize(await rest.makeRequest('DELETE', url, { body }))
+    async delete(url: string, options?: Omit<CreateRequestBodyOptions, 'body' | 'method'>) {
+      camelize(await rest.makeRequest('DELETE', url, options))
     },
 
-    async patch<T = Record<string, unknown>>(url: string, body?: Omit<CreateRequestBodyOptions, 'body' | 'method'>) {
-      return camelize(await rest.makeRequest('PATCH', url, { body })) as Camelize<T>
+    async patch<T = Record<string, unknown>>(url: string, options?: Omit<CreateRequestBodyOptions, 'body' | 'method'>) {
+      return camelize(await rest.makeRequest('PATCH', url, options)) as Camelize<T>
     },
 
-    async put<T = void>(url: string, body?: Omit<CreateRequestBodyOptions, 'body' | 'method'>) {
-      return camelize(await rest.makeRequest('PUT', url, { body })) as Camelize<T>
+    async put<T = void>(url: string, options?: Omit<CreateRequestBodyOptions, 'body' | 'method'>) {
+      return camelize(await rest.makeRequest('PUT', url, options)) as Camelize<T>
     },
 
     async addReaction(channelId, messageId, reaction) {
@@ -1063,28 +553,50 @@ export function createRestManager(options: CreateRestManagerOptions): RestManage
       await rest.put(rest.routes.channels.threads.user(channelId, userId))
     },
 
-    async createAutomodRule(guildId, body) {
-      return await rest.post<DiscordAutoModerationRule>(rest.routes.guilds.automod.rules(guildId), { body })
+    async addDmRecipient(channelId, userId, body) {
+      await rest.put(rest.routes.channels.dmRecipient(channelId, userId), { body })
     },
 
-    async createChannel(guildId, body) {
-      return await rest.post<DiscordChannel>(rest.routes.guilds.channels(guildId), { body })
+    async createAutomodRule(guildId, body, reason) {
+      return await rest.post<DiscordAutoModerationRule>(rest.routes.guilds.automod.rules(guildId), { body, reason })
     },
 
-    async createEmoji(guildId, body) {
-      return await rest.post<DiscordEmoji>(rest.routes.guilds.emojis(guildId), { body })
+    async createChannel(guildId, body, reason) {
+      return await rest.post<DiscordChannel>(rest.routes.guilds.channels(guildId), { body, reason })
     },
 
-    async createGlobalApplicationCommand(body) {
-      return await rest.post<DiscordApplicationCommand>(rest.routes.interactions.commands.commands(rest.applicationId), { body })
+    async createEmoji(guildId, body, reason) {
+      return await rest.post<DiscordEmoji>(rest.routes.guilds.emojis(guildId), { body, reason })
+    },
+
+    async createGlobalApplicationCommand(body, options) {
+      const restOptions: MakeRequestOptions = { body }
+
+      if (options?.bearerToken) {
+        restOptions.unauthorized = true
+        restOptions.headers = {
+          authorization: `Bearer ${options.bearerToken}`,
+        }
+      }
+
+      return await rest.post<DiscordApplicationCommand>(rest.routes.interactions.commands.commands(rest.applicationId), restOptions)
     },
 
     async createGuild(body) {
       return await rest.post<DiscordGuild>(rest.routes.guilds.all(), { body })
     },
 
-    async createGuildApplicationCommand(body, guildId) {
-      return await rest.post<DiscordApplicationCommand>(rest.routes.interactions.commands.guilds.all(rest.applicationId, guildId), { body })
+    async createGuildApplicationCommand(body, guildId, options) {
+      const restOptions: MakeRequestOptions = { body }
+
+      if (options?.bearerToken) {
+        restOptions.unauthorized = true
+        restOptions.headers = {
+          authorization: `Bearer ${options.bearerToken}`,
+        }
+      }
+
+      return await rest.post<DiscordApplicationCommand>(rest.routes.interactions.commands.guilds.all(rest.applicationId, guildId), restOptions)
     },
 
     async createGuildFromTemplate(templateCode, body) {
@@ -1095,38 +607,38 @@ export function createRestManager(options: CreateRestManagerOptions): RestManage
       return await rest.post<DiscordGuild>(rest.routes.guilds.templates.code(templateCode), { body })
     },
 
-    async createGuildSticker(guildId, options) {
+    async createGuildSticker(guildId, options, reason) {
       const form = new FormData()
       form.append('file', options.file.blob, options.file.name)
       form.append('name', options.name)
       form.append('description', options.description)
       form.append('tags', options.tags)
 
-      return await rest.post<DiscordSticker>(rest.routes.guilds.stickers(guildId), { body: form })
+      return await rest.post<DiscordSticker>(rest.routes.guilds.stickers(guildId), { body: form, reason })
     },
 
     async createGuildTemplate(guildId, body) {
       return await rest.post<DiscordTemplate>(rest.routes.guilds.templates.all(guildId), { body })
     },
 
-    async createForumThread(channelId, body) {
-      return await rest.post<DiscordChannel>(rest.routes.channels.forum(channelId), { body })
+    async createForumThread(channelId, body, reason) {
+      return await rest.post<DiscordChannel>(rest.routes.channels.forum(channelId), { body, files: body.files, reason })
     },
 
-    async createInvite(channelId, body = {}) {
-      return await rest.post<DiscordInvite>(rest.routes.channels.invites(channelId), { body })
+    async createInvite(channelId, body = {}, reason) {
+      return await rest.post<DiscordInvite>(rest.routes.channels.invites(channelId), { body, reason })
     },
 
     async createRole(guildId, body, reason) {
       return await rest.post<DiscordRole>(rest.routes.guilds.roles.all(guildId), { body, reason })
     },
 
-    async createScheduledEvent(guildId, body) {
-      return await rest.post<DiscordScheduledEvent>(rest.routes.guilds.events.events(guildId), { body })
+    async createScheduledEvent(guildId, body, reason) {
+      return await rest.post<DiscordScheduledEvent>(rest.routes.guilds.events.events(guildId), { body, reason })
     },
 
-    async createStageInstance(body) {
-      return await rest.post<DiscordStageInstance>(rest.routes.channels.stages(), { body })
+    async createStageInstance(body, reason) {
+      return await rest.post<DiscordStageInstance>(rest.routes.channels.stages(), { body, reason })
     },
 
     async createWebhook(channelId, options, reason) {
@@ -1158,7 +670,7 @@ export function createRestManager(options: CreateRestManagerOptions): RestManage
     },
 
     async deleteFollowupMessage(token, messageId) {
-      await rest.delete(rest.routes.interactions.responses.message(rest.applicationId, token, messageId))
+      await rest.delete(rest.routes.interactions.responses.message(rest.applicationId, token, messageId), { unauthorized: true })
     },
 
     async deleteGlobalApplicationCommand(commandId) {
@@ -1181,8 +693,8 @@ export function createRestManager(options: CreateRestManagerOptions): RestManage
       await rest.delete(rest.routes.guilds.templates.guild(guildId, templateCode))
     },
 
-    async deleteIntegration(guildId, integrationId) {
-      await rest.delete(rest.routes.guilds.integration(guildId, integrationId))
+    async deleteIntegration(guildId, integrationId, reason) {
+      await rest.delete(rest.routes.guilds.integration(guildId, integrationId), { reason })
     },
 
     async deleteInvite(inviteCode, reason) {
@@ -1203,7 +715,7 @@ export function createRestManager(options: CreateRestManagerOptions): RestManage
     },
 
     async deleteOriginalInteractionResponse(token) {
-      await rest.delete(rest.routes.interactions.responses.original(rest.applicationId, token))
+      await rest.delete(rest.routes.interactions.responses.original(rest.applicationId, token), { unauthorized: true })
     },
 
     async deleteOwnReaction(channelId, messageId, reaction) {
@@ -1222,8 +734,8 @@ export function createRestManager(options: CreateRestManagerOptions): RestManage
       await rest.delete(rest.routes.channels.reactions.emoji(channelId, messageId, reaction))
     },
 
-    async deleteRole(guildId, roleId) {
-      await rest.delete(rest.routes.guilds.roles.one(guildId, roleId))
+    async deleteRole(guildId, roleId, reason) {
+      await rest.delete(rest.routes.guilds.roles.one(guildId, roleId), { reason })
     },
 
     async deleteScheduledEvent(guildId, eventId) {
@@ -1253,7 +765,7 @@ export function createRestManager(options: CreateRestManagerOptions): RestManage
     },
 
     async editApplicationCommandPermissions(guildId, commandId, bearerToken, permissions) {
-      return await rest.put<DiscordApplicationCommandPermissions>(
+      return await rest.put<DiscordGuildApplicationCommandPermissions>(
         rest.routes.interactions.commands.permission(rest.applicationId, guildId, commandId),
         {
           body: {
@@ -1264,14 +776,14 @@ export function createRestManager(options: CreateRestManagerOptions): RestManage
       )
     },
 
-    async editAutomodRule(guildId, ruleId, body) {
-      return await rest.patch<DiscordAutoModerationRule>(rest.routes.guilds.automod.rule(guildId, ruleId), { body })
+    async editAutomodRule(guildId, ruleId, body, reason) {
+      return await rest.patch<DiscordAutoModerationRule>(rest.routes.guilds.automod.rule(guildId, ruleId), { body, reason })
     },
 
     async editBotProfile(options) {
       const avatar = options?.botAvatarURL ? await urlToBase64(options?.botAvatarURL) : options?.botAvatarURL
 
-      return await rest.patch<DiscordUser>(rest.routes.userBot(), {
+      return await rest.patch<DiscordUser>(rest.routes.currentUser(), {
         body: {
           username: options.username?.trim(),
           avatar,
@@ -1279,32 +791,36 @@ export function createRestManager(options: CreateRestManagerOptions): RestManage
       })
     },
 
-    async editChannel(channelId, body) {
-      return await rest.patch<DiscordChannel>(rest.routes.channels.channel(channelId), { body })
+    async editChannel(channelId, body, reason) {
+      return await rest.patch<DiscordChannel>(rest.routes.channels.channel(channelId), { body, reason })
     },
 
-    async editChannelPermissionOverrides(channelId, body) {
-      await rest.put(rest.routes.channels.overwrite(channelId, body.id), { body })
+    async editChannelPermissionOverrides(channelId, body, reason) {
+      await rest.put(rest.routes.channels.overwrite(channelId, body.id), { body, reason })
     },
 
     async editChannelPositions(guildId, body) {
       await rest.patch(rest.routes.guilds.channels(guildId), { body })
     },
 
-    async editEmoji(guildId, id, body) {
-      return await rest.patch<DiscordEmoji>(rest.routes.guilds.emoji(guildId, id), { body })
+    async editEmoji(guildId, id, body, reason) {
+      return await rest.patch<DiscordEmoji>(rest.routes.guilds.emoji(guildId, id), { body, reason })
     },
 
     async editFollowupMessage(token, messageId, body) {
-      return await rest.patch<DiscordMessage>(rest.routes.interactions.responses.message(rest.applicationId, token, messageId), { body })
+      return await rest.patch<DiscordMessage>(rest.routes.interactions.responses.message(rest.applicationId, token, messageId), {
+        body,
+        files: body.files,
+        unauthorized: true,
+      })
     },
 
     async editGlobalApplicationCommand(commandId, body) {
       return await rest.patch<DiscordApplicationCommand>(rest.routes.interactions.commands.command(rest.applicationId, commandId), { body })
     },
 
-    async editGuild(guildId, body) {
-      return await rest.patch<DiscordGuild>(rest.routes.guilds.guild(guildId), { body })
+    async editGuild(guildId, body, reason) {
+      return await rest.patch<DiscordGuild>(rest.routes.guilds.guild(guildId), { body, reason })
     },
 
     async editGuildApplicationCommand(commandId, guildId, body) {
@@ -1317,8 +833,8 @@ export function createRestManager(options: CreateRestManagerOptions): RestManage
       await rest.post(rest.routes.guilds.mfa(guildId), { body: { level: mfaLevel }, reason })
     },
 
-    async editGuildSticker(guildId, stickerId, body) {
-      return await rest.patch<DiscordSticker>(rest.routes.guilds.sticker(guildId, stickerId), { body })
+    async editGuildSticker(guildId, stickerId, body, reason) {
+      return await rest.patch<DiscordSticker>(rest.routes.guilds.sticker(guildId, stickerId), { body, reason })
     },
 
     async editGuildTemplate(guildId, templateCode: string, body: ModifyGuildTemplate): Promise<Camelize<DiscordTemplate>> {
@@ -1326,11 +842,14 @@ export function createRestManager(options: CreateRestManagerOptions): RestManage
     },
 
     async editMessage(channelId, messageId, body) {
-      return await rest.patch<DiscordMessage>(rest.routes.channels.message(channelId, messageId), { body })
+      return await rest.patch<DiscordMessage>(rest.routes.channels.message(channelId, messageId), { body, files: body.files })
     },
 
     async editOriginalInteractionResponse(token, body) {
-      return await rest.patch<DiscordMessage>(rest.routes.interactions.responses.original(rest.applicationId, token), { body })
+      return await rest.patch<DiscordMessage>(rest.routes.interactions.responses.original(rest.applicationId, token), {
+        body,
+        files: body.files,
+      })
     },
 
     async editOriginalWebhookMessage(webhookId, token, options) {
@@ -1339,6 +858,8 @@ export function createRestManager(options: CreateRestManagerOptions): RestManage
           type: InteractionResponseTypes.UpdateMessage,
           data: options,
         },
+        files: options.files,
+        unauthorized: true,
       })
     },
 
@@ -1353,16 +874,16 @@ export function createRestManager(options: CreateRestManagerOptions): RestManage
       })
     },
 
-    async editScheduledEvent(guildId, eventId, body) {
-      return await rest.patch<DiscordScheduledEvent>(rest.routes.guilds.events.event(guildId, eventId), { body })
+    async editScheduledEvent(guildId, eventId, body, reason) {
+      return await rest.patch<DiscordScheduledEvent>(rest.routes.guilds.events.event(guildId, eventId), { body, reason })
     },
 
-    async editRole(guildId, roleId, body) {
-      return await rest.patch<DiscordRole>(rest.routes.guilds.roles.one(guildId, roleId), { body })
+    async editRole(guildId, roleId, body, reason) {
+      return await rest.patch<DiscordRole>(rest.routes.guilds.roles.one(guildId, roleId), { body, reason })
     },
 
-    async editRolePositions(guildId, body) {
-      return await rest.patch<DiscordRole[]>(rest.routes.guilds.roles.all(guildId), { body })
+    async editRolePositions(guildId, body, reason) {
+      return await rest.patch<DiscordRole[]>(rest.routes.guilds.roles.all(guildId), { body, reason })
     },
 
     async editStageInstance(channelId, topic, reason?: string) {
@@ -1373,24 +894,27 @@ export function createRestManager(options: CreateRestManagerOptions): RestManage
       await rest.patch(rest.routes.guilds.voice(guildId, options.userId), { body: options })
     },
 
-    async editWebhook(webhookId, body) {
-      return await rest.patch<DiscordWebhook>(rest.routes.webhooks.id(webhookId), { body })
+    async editWebhook(webhookId, body, reason) {
+      return await rest.patch<DiscordWebhook>(rest.routes.webhooks.id(webhookId), { body, reason })
     },
 
     async editWebhookMessage(webhookId, token, messageId, options) {
-      return await rest.patch<DiscordMessage>(rest.routes.webhooks.message(webhookId, token, messageId, options), { body: options })
+      return await rest.patch<DiscordMessage>(rest.routes.webhooks.message(webhookId, token, messageId, options), {
+        body: options,
+        files: options.files,
+      })
     },
 
     async editWebhookWithToken(webhookId, token, body) {
       return await rest.patch<DiscordWebhook>(rest.routes.webhooks.webhook(webhookId, token), { body })
     },
 
-    async editWelcomeScreen(guildId, body) {
-      return await rest.patch<DiscordWelcomeScreen>(rest.routes.guilds.welcome(guildId), { body })
+    async editWelcomeScreen(guildId, body, reason) {
+      return await rest.patch<DiscordWelcomeScreen>(rest.routes.guilds.welcome(guildId), { body, reason })
     },
 
-    async editWidgetSettings(guildId, body) {
-      return await rest.patch<DiscordGuildWidgetSettings>(rest.routes.guilds.widget(guildId), { body })
+    async editWidgetSettings(guildId, body, reason) {
+      return await rest.patch<DiscordGuildWidgetSettings>(rest.routes.guilds.widget(guildId), { body, reason })
     },
 
     async executeWebhook(webhookId, token, options) {
@@ -1409,18 +933,87 @@ export function createRestManager(options: CreateRestManagerOptions): RestManage
       return await rest.get<DiscordListActiveThreads>(rest.routes.channels.threads.active(guildId))
     },
 
-    async getApplicationCommandPermission(guildId, commandId) {
-      return await rest.get<DiscordApplicationCommandPermissions>(
-        rest.routes.interactions.commands.permission(rest.applicationId, guildId, commandId),
+    async getApplicationCommandPermission(guildId, commandId, options) {
+      const restOptions: Omit<MakeRequestOptions, 'body'> = {}
+
+      if (options?.accessToken) {
+        restOptions.unauthorized = true
+        restOptions.headers = {
+          authorization: `Bearer ${options.accessToken}`,
+        }
+      }
+
+      return await rest.get<DiscordGuildApplicationCommandPermissions>(
+        rest.routes.interactions.commands.permission(options?.applicationId ?? rest.applicationId, guildId, commandId),
+        restOptions,
       )
     },
 
-    async getApplicationCommandPermissions(guildId) {
-      return await rest.get<DiscordApplicationCommandPermissions[]>(rest.routes.interactions.commands.permissions(rest.applicationId, guildId))
+    async getApplicationCommandPermissions(guildId, options) {
+      const restOptions: Omit<MakeRequestOptions, 'body'> = {}
+
+      if (options?.accessToken) {
+        restOptions.unauthorized = true
+        restOptions.headers = {
+          authorization: `Bearer ${options.accessToken}`,
+        }
+      }
+
+      return await rest.get<DiscordGuildApplicationCommandPermissions[]>(
+        rest.routes.interactions.commands.permissions(options?.applicationId ?? rest.applicationId, guildId),
+        restOptions,
+      )
     },
 
     async getApplicationInfo() {
-      return await rest.get<DiscordApplication>(rest.routes.oauth2Application())
+      return await rest.get<DiscordApplication>(rest.routes.oauth2.application())
+    },
+
+    async editApplicationInfo(body) {
+      return await rest.patch<DiscordApplication>(rest.routes.oauth2.application(), {
+        body,
+      })
+    },
+
+    async getCurrentAuthenticationInfo(token) {
+      return await rest.get<DiscordCurrentAuthorization>(rest.routes.oauth2.currentAuthorization(), {
+        headers: {
+          authorization: `Bearer ${token}`,
+        },
+        unauthorized: true,
+      })
+    },
+
+    async exchangeToken(clientId, clientSecret, body) {
+      const basicCredentials = Buffer.from(`${clientId}:${clientSecret}`)
+
+      const restOptions: MakeRequestOptions = {
+        body,
+        headers: {
+          'content-type': 'application/x-www-form-urlencoded',
+          authorization: `Basic ${basicCredentials.toString('base64')}`,
+        },
+        unauthorized: true,
+      }
+
+      if (body.grantType === 'client_credentials') {
+        restOptions.body.scope = body.scope.join(' ')
+      }
+
+      return await rest.post<DiscordAccessTokenResponse>(rest.routes.oauth2.tokenExchange(), restOptions)
+    },
+
+    async revokeToken(clientId, clientSecret, body) {
+      const basicCredentials = Buffer.from(`${clientId}:${clientSecret}`)
+
+      await rest.post(rest.routes.oauth2.tokenRevoke(), {
+        body,
+        headers: {
+          'content-type': 'application/x-www-form-urlencoded',
+          authorization: `Basic ${basicCredentials.toString('base64')}`,
+        },
+        unauthorized: true,
+      })
     },
 
     async getAuditLog(guildId, options) {
@@ -1469,6 +1062,12 @@ export function createRestManager(options: CreateRestManagerOptions): RestManage
       })
     },
 
+    async getGroupDmChannel(body) {
+      return await rest.post<DiscordChannel>(rest.routes.channels.dm(), {
+        body,
+      })
+    },
+
     async getEmoji(guildId, emojiId) {
       return await rest.get<DiscordEmoji>(rest.routes.guilds.emoji(guildId, emojiId))
     },
@@ -1478,7 +1077,7 @@ export function createRestManager(options: CreateRestManagerOptions): RestManage
     },
 
     async getFollowupMessage(token, messageId) {
-      return await rest.get<DiscordMessage>(rest.routes.interactions.responses.message(rest.applicationId, token, messageId))
+      return await rest.get<DiscordMessage>(rest.routes.interactions.responses.message(rest.applicationId, token, messageId), { unauthorized: true })
     },
 
     async getGatewayBot() {
@@ -1495,6 +1094,15 @@ export function createRestManager(options: CreateRestManagerOptions): RestManage
 
     async getGuild(guildId, options = { counts: true }) {
       return await rest.get<DiscordGuild>(rest.routes.guilds.guild(guildId, options.counts))
+    },
+
+    async getGuilds(token, options) {
+      return await rest.get<DiscordPartialGuild[]>(rest.routes.guilds.userGuilds(options), {
+        headers: {
+          authorization: `Bearer ${token}`,
+        },
+        unauthorized: true,
+      })
     },
 
     async getGuildApplicationCommand(commandId, guildId) {
@@ -1541,12 +1149,12 @@ export function createRestManager(options: CreateRestManagerOptions): RestManage
       return await rest.get<DiscordMessage[]>(rest.routes.channels.messages(channelId, options))
     },
 
-    async getNitroStickerPacks() {
-      return await rest.get<DiscordStickerPack[]>(rest.routes.nitroStickerPacks())
+    async getStickerPacks() {
+      return await rest.get<DiscordStickerPack[]>(rest.routes.stickerPacks())
     },
 
     async getOriginalInteractionResponse(token) {
-      return await rest.get<DiscordMessage>(rest.routes.interactions.responses.original(rest.applicationId, token))
+      return await rest.get<DiscordMessage>(rest.routes.interactions.responses.original(rest.applicationId, token), { unauthorized: true })
     },
 
     async getPinnedMessages(channelId) {
@@ -1621,6 +1229,33 @@ export function createRestManager(options: CreateRestManagerOptions): RestManage
       return await rest.get<DiscordUser>(rest.routes.user(id))
     },
 
+    async getCurrentUser(token) {
+      return await rest.get<DiscordUser>(rest.routes.currentUser(), {
+        headers: {
+          authorization: `Bearer ${token}`,
+        },
+        unauthorized: true,
+      })
+    },
+
+    async getUserConnections(token) {
+      return await rest.get<DiscordConnection[]>(rest.routes.oauth2.connections(), {
+        headers: {
+          authorization: `Bearer ${token}`,
+        },
+        unauthorized: true,
+      })
+    },
+
+    async getUserApplicationRoleConnection(token, applicationId) {
+      return await rest.get<DiscordApplicationRoleConnection>(rest.routes.oauth2.roleConnections(applicationId), {
+        headers: {
+          authorization: `Bearer ${token}`,
+        },
+        unauthorized: true,
+      })
+    },
+
     async getVanityUrl(guildId) {
       return await rest.get<DiscordVanityUrl>(rest.routes.guilds.vanity(guildId))
     },
@@ -1677,76 +1312,66 @@ export function createRestManager(options: CreateRestManagerOptions): RestManage
       await rest.delete(rest.routes.channels.threads.user(channelId, userId))
     },
 
-    // TODO: why that
+    async removeDmRecipient(channelId, userId) {
+      await rest.delete(rest.routes.channels.dmRecipient(channelId, userId))
+    },
+
     async sendFollowupMessage(token, options) {
-      return await new Promise((resolve, reject) => {
-        rest.sendRequest({
-          url: rest.routes.webhooks.webhook(rest.applicationId, token),
-          method: 'POST',
-          options: { body: options },
-          retryCount: 0,
-          retryRequest: async function (options: SendRequestOptions) {
-            // TODO: should change to reprocess queue item
-            await rest.sendRequest(options)
-          },
-          resolve: (data) => {
-            resolve(data.status !== 204 ? JSON.parse(data.body ?? '{}') : undefined)
-          },
-          reject,
-        })
+      return await rest.post(rest.routes.webhooks.webhook(rest.applicationId, token), {
+        body: options,
+        files: options.files,
+        unauthorized: true,
       })
     },
 
-    // TODO: why that
     async sendInteractionResponse(interactionId, token, options) {
-      await new Promise((resolve, reject) => {
-        rest.sendRequest({
-          url: rest.routes.interactions.responses.callback(interactionId, token),
-          method: 'POST',
-          options: { body: options },
-          retryCount: 0,
-          retryRequest: async function (options: SendRequestOptions) {
-            // TODO: should change to reprocess queue item
-            await rest.sendRequest(options)
-          },
-          resolve: (data) => {
-            resolve(data.status !== 204 ? JSON.parse(data.body ?? '{}') : undefined)
-          },
-          reject,
-        })
+      return await rest.post(rest.routes.interactions.responses.callback(interactionId, token), {
+        body: options,
+        files: options.data?.files,
+        runThroughQueue: false,
+        unauthorized: true,
       })
     },
 
     async sendMessage(channelId, body) {
-      return await rest.post<DiscordMessage>(rest.routes.channels.messages(channelId), { body })
+      return await rest.post<DiscordMessage>(rest.routes.channels.messages(channelId), { body, files: body.files })
     },
 
-    async startThreadWithMessage(channelId, messageId, body) {
-      return await rest.post<DiscordChannel>(rest.routes.channels.threads.message(channelId, messageId), { body })
+    async startThreadWithMessage(channelId, messageId, body, reason) {
+      return await rest.post<DiscordChannel>(rest.routes.channels.threads.message(channelId, messageId), { body, reason })
     },
 
-    async startThreadWithoutMessage(channelId, body) {
-      return await rest.post<DiscordChannel>(rest.routes.channels.threads.all(channelId), { body })
+    async startThreadWithoutMessage(channelId, body, reason) {
+      return await rest.post<DiscordChannel>(rest.routes.channels.threads.all(channelId), { body, reason })
     },
 
     async syncGuildTemplate(guildId) {
       return await rest.put<DiscordTemplate>(rest.routes.guilds.templates.all(guildId))
     },
 
-    async banMember(guildId, userId, body) {
-      await rest.put<void>(rest.routes.guilds.members.ban(guildId, userId), { body })
+    async banMember(guildId, userId, body, reason) {
+      await rest.put<void>(rest.routes.guilds.members.ban(guildId, userId), { body, reason })
     },
 
-    async editBotMember(guildId, body) {
-      return await rest.patch<DiscordMember>(rest.routes.guilds.members.bot(guildId), { body })
+    async editBotMember(guildId, body, reason) {
+      return await rest.patch<DiscordMember>(rest.routes.guilds.members.bot(guildId), { body, reason })
     },
 
-    async editMember(guildId, userId, body) {
-      return await rest.patch<DiscordMemberWithUser>(rest.routes.guilds.members.member(guildId, userId), { body })
+    async editMember(guildId, userId, body, reason) {
+      return await rest.patch<DiscordMemberWithUser>(rest.routes.guilds.members.member(guildId, userId), { body, reason })
     },
 
     async getMember(guildId, userId) {
       return await rest.get<DiscordMemberWithUser>(rest.routes.guilds.members.member(guildId, userId))
+    },
+
+    async getCurrentMember(guildId, token) {
+      return await rest.get<DiscordMemberWithUser>(rest.routes.guilds.members.currentMember(guildId), {
+        headers: {
+          authorization: `Bearer ${token}`,
+        },
+        unauthorized: true,
+      })
     },
 
     async getMembers(guildId, options) {
@@ -1763,16 +1388,27 @@ export function createRestManager(options: CreateRestManagerOptions): RestManage
       await rest.put(rest.routes.channels.pin(channelId, messageId), { reason })
     },
 
-    async pruneMembers(guildId, body) {
-      return await rest.post<{ pruned: number | null }>(rest.routes.guilds.members.prune(guildId), { body })
+    async pruneMembers(guildId, body, reason) {
+      return await rest.post<{ pruned: number | null }>(rest.routes.guilds.members.prune(guildId), { body, reason })
     },
 
     async searchMembers(guildId, query, options) {
       return await rest.get<DiscordMemberWithUser[]>(rest.routes.guilds.members.search(guildId, query, options))
     },
 
-    async unbanMember(guildId, userId) {
-      await rest.delete(rest.routes.guilds.members.ban(guildId, userId))
+    async getGuildOnboarding(guildId) {
+      return await rest.get<DiscordGuildOnboarding>(rest.routes.guilds.onboarding(guildId))
+    },
+
+    async editGuildOnboarding(guildId, options, reason) {
+      return await rest.put<DiscordGuildOnboarding>(rest.routes.guilds.onboarding(guildId), {
+        body: options,
+        reason,
+      })
+    },
+
+    async unbanMember(guildId, userId, reason) {
+      await rest.delete(rest.routes.guilds.members.ban(guildId, userId), { reason })
     },
 
     async unpinMessage(channelId, messageId, reason) {
@@ -1783,14 +1419,103 @@ export function createRestManager(options: CreateRestManagerOptions): RestManage
       await rest.post(rest.routes.channels.typing(channelId))
     },
 
-    async upsertGlobalApplicationCommands(body) {
-      return await rest.put<DiscordApplicationCommand[]>(rest.routes.interactions.commands.commands(rest.applicationId), { body })
+    async upsertGlobalApplicationCommands(body, options) {
+      const restOptions: MakeRequestOptions = { body }
+
+      if (options?.bearerToken) {
+        restOptions.unauthorized = true
+        restOptions.headers = {
+          authorization: `Bearer ${options.bearerToken}`,
+        }
+      }
+
+      return await rest.put<DiscordApplicationCommand[]>(rest.routes.interactions.commands.commands(rest.applicationId), restOptions)
     },
 
-    async upsertGuildApplicationCommands(guildId, body) {
-      return await rest.put<DiscordApplicationCommand[]>(rest.routes.interactions.commands.guilds.all(rest.applicationId, guildId), { body })
+    async upsertGuildApplicationCommands(guildId, body, options) {
+      const restOptions: MakeRequestOptions = { body }
+
+      if (options?.bearerToken) {
+        restOptions.unauthorized = true
+        restOptions.headers = {
+          authorization: `Bearer ${options.bearerToken}`,
+        }
+      }
+
+      return await rest.put<DiscordApplicationCommand[]>(rest.routes.interactions.commands.guilds.all(rest.applicationId, guildId), restOptions)
+    },
+
+    async editUserApplicationRoleConnection(token, applicationId, body) {
+      return await rest.put<DiscordApplicationRoleConnection>(rest.routes.oauth2.roleConnections(applicationId), {
+        body,
+        headers: {
+          authorization: `Bearer ${token}`,
+        },
+        unauthorized: true,
+      })
+    },
+
+    async addGuildMember(guildId, userId, body) {
+      return await rest.put(rest.routes.guilds.members.member(guildId, userId), {
+        body,
+      })
+    },
+
+    async createTestEntitlement(applicationId, body) {
+      return await rest.post<DiscordEntitlement>(rest.routes.monetization.entitlements(applicationId), {
+        body,
+      })
+    },
+
+    async listEntitlements(applicationId, options) {
+      return await rest.get<DiscordEntitlement[]>(rest.routes.monetization.entitlements(applicationId, options))
+    },
+
+    async deleteTestEntitlement(applicationId, entitlementId) {
+      await rest.delete(rest.routes.monetization.entitlement(applicationId, entitlementId))
+    },
+
+    async listSkus(applicationId) {
+      return await rest.get<DiscordSku[]>(rest.routes.monetization.skus(applicationId))
+    },
+
+    preferSnakeCase(enabled: boolean) {
+      const camelizer = enabled ? (x: any) => x : camelize
+
+      rest.get = async (url, options) => {
+        return camelizer(await rest.makeRequest('GET', url, options))
+      }
+
+      rest.post = async (url: string, options?: Omit<CreateRequestBodyOptions, 'body' | 'method'>) => {
+        return camelizer(await rest.makeRequest('POST', url, options))
+      }
+
+      rest.delete = async (url: string, options?: Omit<CreateRequestBodyOptions, 'body' | 'method'>) => {
+        camelizer(await rest.makeRequest('DELETE', url, options))
+      }
+
+      rest.patch = async (url: string, options?: Omit<CreateRequestBodyOptions, 'body' | 'method'>) => {
+        return camelizer(await rest.makeRequest('PATCH', url, options))
+      }
+
+      rest.put = async (url: string, options?: Omit<CreateRequestBodyOptions, 'body' | 'method'>) => {
+        return camelizer(await rest.makeRequest('PUT', url, options))
+      }
+
+      return rest
     },
   }
 
   return rest
+}
+
+enum HttpResponseCode {
+  /** Minimum value of a code in oder to consider that it was successful. */
+  Success = 200,
+  /** Request completed successfully, but Discord returned an empty body. */
+  NoContent = 204,
+  /** Minimum value of a code in order to consider that something went wrong. */
+  Error = 400,
+  /** This request got rate limited. */
+  TooManyRequests = 429,
 }

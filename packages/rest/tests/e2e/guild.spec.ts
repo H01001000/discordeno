@@ -14,7 +14,6 @@ before(async () => {
 })
 
 after(async () => {
-  if (rest.invalidBucket.timeoutId) clearTimeout(rest.invalidBucket.timeoutId)
   if (e2ecache.guild.id && !e2ecache.deletedGuild) {
     e2ecache.deletedGuild = true
     await rest.deleteGuild(e2ecache.guild.id)
@@ -82,10 +81,14 @@ describe('Manage Guilds', async () => {
   })
 
   it('Banning members', async () => {
-    await rest.banMember(e2ecache.guild.id, '379643682984296448', {
-      reason: 'Blame Wolf',
-      deleteMessageSeconds: 604800,
-    })
+    await rest.banMember(
+      e2ecache.guild.id,
+      '379643682984296448',
+      {
+        deleteMessageSeconds: 604800,
+      },
+      'Blame Wolf',
+    )
     const fetchedBan = await rest.getBan(e2ecache.guild.id, '379643682984296448')
 
     // Assertions
@@ -118,7 +121,6 @@ describe('Manage Guilds', async () => {
   //     enabled: true,
   //     description: 'some description',
   //   })
-
 
   // })
 })

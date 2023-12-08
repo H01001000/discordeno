@@ -1,10 +1,11 @@
 import type { CreateGatewayManagerOptions, GatewayManager } from '@discordeno/gateway'
-import { createGatewayManager, ShardSocketCloseCodes } from '@discordeno/gateway'
+import { ShardSocketCloseCodes, createGatewayManager } from '@discordeno/gateway'
 import type { CreateRestManagerOptions, RestManager } from '@discordeno/rest'
 import { createRestManager } from '@discordeno/rest'
-import type { DiscordEmoji, DiscordGatewayPayload, DiscordReady, GatewayIntents } from '@discordeno/types'
+import type { BigString, DiscordEmoji, DiscordGatewayPayload, DiscordReady, GatewayIntents } from '@discordeno/types'
 import { createLogger, getBotIdFromToken, type Collection } from '@discordeno/utils'
 import { createBotGatewayHandlers } from './handlers.js'
+import { createBotHelpers, type BotHelpers } from './helpers.js'
 import { createTransformers, type Transformers } from './transformers.js'
 import type { ApplicationCommandPermission } from './transformers/applicationCommandPermission.js'
 import type { AuditLogEntry } from './transformers/auditLogEntry.js'
@@ -12,17 +13,19 @@ import type { AutoModerationActionExecution } from './transformers/automodAction
 import type { AutoModerationRule } from './transformers/automodRule.js'
 import type { Channel } from './transformers/channel.js'
 import type { Emoji } from './transformers/emoji.js'
+import { type Entitlement } from './transformers/entitlement.js'
 import type { Guild } from './transformers/guild.js'
 import type { Integration } from './transformers/integration.js'
 import type { Interaction } from './transformers/interaction.js'
 import type { Invite } from './transformers/invite.js'
-import type { Member, User } from './transformers/member.js'
+import type { Member } from './transformers/member.js'
 import type { Message } from './transformers/message.js'
 import type { PresenceUpdate } from './transformers/presence.js'
 import type { Role } from './transformers/role.js'
 import type { ScheduledEvent } from './transformers/scheduledEvent.js'
 import type { Sticker } from './transformers/sticker.js'
 import type { ThreadMember } from './transformers/threadMember.js'
+import type { User } from './transformers/user.js'
 import type { VoiceState } from './transformers/voiceState.js'
 
 /**
@@ -32,7 +35,7 @@ import type { VoiceState } from './transformers/voiceState.js'
  * @returns Bot
  */
 export function createBot(options: CreateBotOptions): Bot {
-  if (!options.rest) options.rest = { token: options.token }
+  if (!options.rest) options.rest = { token: options.token, applicationId: options.applicationId }
   if (!options.gateway) options.gateway = { token: options.token, events: {} }
   if (!options.gateway.events.message) {
     options.gateway.events.message = async (shard, data) => {
@@ -43,35 +46,40 @@ export function createBot(options: CreateBotOptions): Bot {
 
       // RUN DISPATCH CHECK
       await bot.events.dispatchRequirements?.(data, shard.id)
-      bot.events[
-        data.t.toLowerCase().replace(/_([a-z])/g, function (g) {
-          return g[1].toUpperCase()
-        }) as keyof EventHandlers
-        // @ts-expect-error as any gets removed by linter
-      ]?.(data.d, shard.id)
+      bot.handlers[data.t as keyof ReturnType<typeof createBotGatewayHandlers>]?.(bot, data, shard.id)
     }
   }
 
   options.rest.token = options.token
   options.gateway.intents = options.intents
+  options.gateway.preferSnakeCase = true
 
   const id = getBotIdFromToken(options.token)
 
   const bot: Bot = {
     id,
     applicationId: id,
-    transformers: createTransformers({}),
+    transformers: createTransformers({}, { defaultDesiredPropertiesValue: options.defaultDesiredPropertiesValue ?? false }),
     handlers: createBotGatewayHandlers({}),
     rest: createRestManager(options.rest),
     gateway: createGatewayManager(options.gateway),
     events: options.events ?? {},
     logger: createLogger({ name: 'BOT' }),
-
+    // Set up helpers below.
+    helpers: {} as BotHelpers,
     async start() {
       if (!options.gateway?.connection) {
         bot.gateway.connection = await bot.rest.getSessionInfo()
+
+        // Check for overrides in the configuration
+        if (!options.gateway?.url) bot.gateway.url = bot.gateway.connection.url
+
+        if (!options.gateway?.totalShards) bot.gateway.totalShards = bot.gateway.connection.shards
+
+        if (!options.gateway?.lastShardId && !options.gateway?.totalShards) bot.gateway.lastShardId = bot.gateway.connection.shards - 1
       }
-      return await bot.gateway.spawnShards()
+
+      await bot.gateway.spawnShards()
     },
 
     async shutdown() {
@@ -79,12 +87,17 @@ export function createBot(options: CreateBotOptions): Bot {
     },
   }
 
+  bot.helpers = createBotHelpers(bot)
+  if (options.applicationId) bot.applicationId = bot.transformers.snowflake(options.applicationId)
+
   return bot
 }
 
 export interface CreateBotOptions {
   /** The bot's token. */
   token: string
+  /** Application Id of the bot incase it is an old bot token. */
+  applicationId?: BigString
   /** The bot's intents that will be used to make a connection with discords gateway. */
   intents?: GatewayIntents
   /** Any options you wish to provide to the rest manager. */
@@ -93,6 +106,15 @@ export interface CreateBotOptions {
   gateway?: CreateGatewayManagerOptions
   /** The event handlers. */
   events: Partial<EventHandlers>
+  /**
+   * @deprecated Use with caution
+   *
+   * This property will be removed in the near future when the CLI is complete. It is not recommended to use whatsoever.
+   * Although it is harder to create your bot without this, it is still highly recommended to do it that way.
+   *
+   * @default false
+   */
+  defaultDesiredPropertiesValue?: boolean
 }
 
 export interface Bot {
@@ -112,6 +134,7 @@ export interface Bot {
   transformers: Transformers
   /** The handler functions that should handle incoming discord payloads from gateway and call an event. */
   handlers: ReturnType<typeof createBotGatewayHandlers>
+  helpers: BotHelpers
   /** Start the bot connection to the gateway. */
   start: () => Promise<void>
   /** Shuts down all the bot connections to the gateway. */
@@ -121,13 +144,14 @@ export interface Bot {
 export interface EventHandlers {
   debug: (text: string, ...args: any[]) => unknown
   applicationCommandPermissionsUpdate: (command: ApplicationCommandPermission) => unknown
-  auditLogEntryCreate: (log: AuditLogEntry, guildId: bigint) => unknown
+  guildAuditLogEntryCreate: (log: AuditLogEntry, guildId: bigint) => unknown
   automodRuleCreate: (rule: AutoModerationRule) => unknown
   automodRuleUpdate: (rule: AutoModerationRule) => unknown
   automodRuleDelete: (rule: AutoModerationRule) => unknown
   automodActionExecution: (payload: AutoModerationActionExecution) => unknown
   threadCreate: (thread: Channel) => unknown
   threadDelete: (thread: Channel) => unknown
+  threadListSync: (payload: { guildId: bigint; channelIds?: bigint[]; threads: Channel[]; members: ThreadMember[] }) => unknown
   threadMemberUpdate: (payload: { id: bigint; guildId: bigint; joinedAt: number; flags: number }) => unknown
   threadMembersUpdate: (payload: { id: bigint; guildId: bigint; addedMembers?: ThreadMember[]; removedMemberIds?: bigint[] }) => unknown
   threadUpdate: (thread: Channel) => unknown
@@ -172,6 +196,7 @@ export interface EventHandlers {
     member?: Member
     user?: User
     emoji: Emoji
+    messageAuthorId?: bigint
   }) => unknown
   reactionRemove: (payload: { userId: bigint; channelId: bigint; messageId: bigint; guildId?: bigint; emoji: Emoji }) => unknown
   reactionRemoveEmoji: (payload: { channelId: bigint; messageId: bigint; guildId?: bigint; emoji: Emoji }) => unknown
@@ -192,6 +217,7 @@ export interface EventHandlers {
   guildBanRemove: (user: User, guildId: bigint) => unknown
   guildCreate: (guild: Guild) => unknown
   guildDelete: (id: bigint, shardId: number) => unknown
+  guildUnavailable: (id: bigint, shardId: number) => unknown
   guildUpdate: (guild: Guild) => unknown
   raw: (data: DiscordGatewayPayload, shardId: number) => unknown
   roleCreate: (role: Role) => unknown
@@ -200,4 +226,7 @@ export interface EventHandlers {
   webhooksUpdate: (payload: { channelId: bigint; guildId: bigint }) => unknown
   botUpdate: (user: User) => unknown
   typingStart: (payload: { guildId: bigint | undefined; channelId: bigint; userId: bigint; timestamp: number; member: Member | undefined }) => unknown
+  entitlementCreate: (entitlement: Entitlement) => unknown
+  entitlementUpdate: (entitlement: Entitlement) => unknown
+  entitlementDelete: (entitlement: Entitlement) => unknown
 }

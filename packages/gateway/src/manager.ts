@@ -1,21 +1,28 @@
 /* eslint-disable @typescript-eslint/no-confusing-void-expression */
-import type { AtLeastOne, BigString, Camelize, DiscordGetGatewayBot, DiscordMember, RequestGuildMembers } from '@discordeno/types'
+import {
+  GatewayIntents,
+  GatewayOpcodes,
+  type AtLeastOne,
+  type BigString,
+  type Camelize,
+  type DiscordGetGatewayBot,
+  type DiscordMemberWithUser,
+  type RequestGuildMembers,
+} from '@discordeno/types'
 import { Collection, delay, logger } from '@discordeno/utils'
 import Shard from './Shard.js'
-import type { ShardEvents, StatusUpdate, UpdateVoiceState } from './types.js'
+import type { ShardEvents, ShardSocketRequest, StatusUpdate, UpdateVoiceState } from './types.js'
 
 export function createGatewayManager(options: CreateGatewayManagerOptions): GatewayManager {
-  if (!options.connection) {
-    options.connection = {
-      url: 'wss://gateway.discord.gg',
-      shards: 1,
-      sessionStartLimit: {
-        maxConcurrency: 1,
-        remaining: 1000,
-        total: 1000,
-        resetAfter: 1000 * 60 * 60 * 24,
-      },
-    }
+  const connectionOptions = options.connection ?? {
+    url: 'wss://gateway.discord.gg',
+    shards: 1,
+    sessionStartLimit: {
+      maxConcurrency: 1,
+      remaining: 1000,
+      total: 1000,
+      resetAfter: 1000 * 60 * 60 * 24,
+    },
   }
 
   const gateway: GatewayManager = {
@@ -28,16 +35,16 @@ export function createGatewayManager(options: CreateGatewayManagerOptions): Gate
       device: options.properties?.device ?? 'Discordeno',
     },
     token: options.token,
-    url: options.url ?? options.connection.url ?? 'wss://gateway.discord.gg',
+    url: options.url ?? connectionOptions.url ?? 'wss://gateway.discord.gg',
     version: options.version ?? 10,
-    connection: options.connection,
-    totalShards: options.totalShards ?? options.connection.shards ?? 1,
-    lastShardId: options.lastShardId ?? 0,
+    connection: connectionOptions,
+    totalShards: options.totalShards ?? connectionOptions.shards ?? 1,
+    lastShardId: options.lastShardId ?? (options.totalShards ? options.totalShards - 1 : connectionOptions ? connectionOptions.shards - 1 : 0),
     firstShardId: options.firstShardId ?? 0,
     totalWorkers: options.totalWorkers ?? 4,
     shardsPerWorker: options.shardsPerWorker ?? 25,
     spawnShardDelay: options.spawnShardDelay ?? 5300,
-    preferSnakeCase: false,
+    preferSnakeCase: options.preferSnakeCase ?? false,
     shards: new Map(),
     buckets: new Map(),
     cache: {
@@ -65,7 +72,7 @@ export function createGatewayManager(options: CreateGatewayManagerOptions): Gate
       )
     },
     calculateWorkerId(shardId) {
-      const workerId = shardId % gateway.shardsPerWorker
+      const workerId = Math.min(shardId % gateway.shardsPerWorker, gateway.totalWorkers - 1)
       logger.debug(
         `[Gateway] Calculating workerId: Shard: ${shardId} -> Worker: ${workerId} -> Per Worker: ${gateway.shardsPerWorker} -> Total: ${gateway.totalWorkers}`,
       )
@@ -136,6 +143,15 @@ export function createGatewayManager(options: CreateGatewayManagerOptions): Gate
 
       await delay(5000)
     },
+    async sendPayload(shardId, payload) {
+      const shard = gateway.shards.get(shardId)
+
+      if (!shard) {
+        throw new Error(`Shard (id: ${shardId} not found`)
+      }
+
+      await shard.send(payload)
+    },
     async tellWorkerToIdentify(workerId, shardId, bucketId) {
       logger.debug(`[Gateway] tell worker to identify (${workerId}, ${shardId}, ${bucketId})`)
       await gateway.identify(shardId)
@@ -198,7 +214,6 @@ export function createGatewayManager(options: CreateGatewayManagerOptions): Gate
       this.shards.delete(shardId)
       await shard.shutdown()
     },
-
     async requestIdentify(shardId: number) {
       logger.debug(`[Gateway] requesting identify`)
       // const bucket = gateway.buckets.get(shardId % gateway.connection.sessionStartLimit.maxConcurrency)
@@ -226,17 +241,23 @@ export function createGatewayManager(options: CreateGatewayManagerOptions): Gate
 
     async joinVoiceChannel(guildId, channelId, options) {
       const shardId = gateway.calculateShardId(guildId)
-      const shard = gateway.shards.get(shardId)
-      if (!shard) {
-        throw new Error(`Shard (id: ${shardId} not found`)
-      }
 
       logger.debug(`[Gateway] joinVoiceChannel guildId: ${guildId} channelId: ${channelId}`)
-      shard.joinVoiceChannel(guildId, channelId, options)
+
+      await gateway.sendPayload(shardId, {
+        op: GatewayOpcodes.VoiceStateUpdate,
+        d: {
+          guild_id: guildId.toString(),
+          channel_id: channelId.toString(),
+          self_mute: options?.selfMute ?? false,
+          self_deaf: options?.selfDeaf ?? true,
+        },
+      })
     },
 
     async editBotStatus(data) {
       logger.debug(`[Gateway] editBotStatus data: ${JSON.stringify(data)}`)
+
       await Promise.all(
         [...gateway.shards.values()].map(async (shard) => {
           gateway.editShardStatus(shard.id, data)
@@ -245,35 +266,80 @@ export function createGatewayManager(options: CreateGatewayManagerOptions): Gate
     },
 
     async editShardStatus(shardId, data) {
-      const shard = gateway.shards.get(shardId)
-      if (!shard) {
-        throw new Error(`Shard (id: ${shardId}) not found.`)
-      }
-
       logger.debug(`[Gateway] editShardStatus shardId: ${shardId} -> data: ${JSON.stringify(data)}`)
-      await shard.editShardStatus(data)
+
+      await gateway.sendPayload(shardId, {
+        op: GatewayOpcodes.PresenceUpdate,
+        d: {
+          since: null,
+          afk: false,
+          activities: data.activities,
+          status: data.status,
+        },
+      })
     },
 
     async requestMembers(guildId, options) {
       const shardId = gateway.calculateShardId(guildId)
-      const shard = gateway.shards.get(shardId)
-      if (!shard) {
-        throw new Error(`Shard (id: ${shardId}) not found.`)
+
+      if (gateway.intents && (!options?.limit || options.limit > 1) && !(gateway.intents & GatewayIntents.GuildMembers))
+        throw new Error('Cannot fetch more then 1 member without the GUILD_MEMBERS intent')
+
+      logger.debug(`[Gateway] requestMembers guildId: ${guildId} -> data: ${JSON.stringify(options)}`)
+
+      if (options?.userIds?.length) {
+        logger.debug(`[Gateway] requestMembers guildId: ${guildId} -> setting user limit based on userIds length: ${options.userIds.length}`)
+
+        options.limit = options.userIds.length
       }
 
-      logger.debug(`[Gateway] requestMembers guildId: ${guildId} -> options ${JSON.stringify(options)}`)
-      return await shard.requestMembers(guildId, options)
+      const members =
+        !gateway.cache.requestMembers?.enabled || !options?.nonce
+          ? []
+          : new Promise<Camelize<DiscordMemberWithUser[]>>((resolve, reject) => {
+              // Should never happen.
+              if (!gateway.cache.requestMembers?.enabled || !options?.nonce) {
+                reject(new Error("Can't request the members without the nonce or with the feature disabled."))
+                return
+              }
+
+              gateway.cache.requestMembers.pending.set(options.nonce, {
+                nonce: options.nonce,
+                resolve,
+                members: [],
+              })
+            })
+
+      await gateway.sendPayload(shardId, {
+        op: GatewayOpcodes.RequestGuildMembers,
+        d: {
+          guild_id: guildId.toString(),
+          // If a query is provided use it, OR if a limit is NOT provided use ""
+          query: options?.query ?? (options?.limit ? undefined : ''),
+          limit: options?.limit ?? 0,
+          presences: options?.presences ?? false,
+          user_ids: options?.userIds?.map((id) => id.toString()),
+          nonce: options?.nonce,
+        },
+      })
+
+      return await members
     },
 
     async leaveVoiceChannel(guildId) {
       const shardId = gateway.calculateShardId(guildId)
-      const shard = gateway.shards.get(shardId)
-      if (!shard) {
-        throw new Error(`Shard (id: ${shardId} not found`)
-      }
 
       logger.debug(`[Gateway] leaveVoiceChannel guildId: ${guildId} Shard ${shardId}`)
-      await shard.leaveVoiceChannel(guildId)
+
+      await gateway.sendPayload(shardId, {
+        op: GatewayOpcodes.VoiceStateUpdate,
+        d: {
+          guild_id: guildId.toString(),
+          channel_id: null,
+          self_mute: false,
+          self_deaf: false,
+        },
+      })
     },
   }
 
@@ -396,6 +462,7 @@ export interface GatewayManager extends Required<CreateGatewayManagerOptions> {
   spawnShards: () => Promise<void>
   /** Shutdown all shards. */
   shutdown: (code: number, reason: string) => Promise<void>
+  sendPayload: (shardId: number, payload: ShardSocketRequest) => Promise<void>
   /** Allows users to hook in and change to communicate to different workers across different servers or anything they like. For example using redis pubsub to talk to other servers. */
   tellWorkerToIdentify: (workerId: number, shardId: number, bucketId: number) => Promise<void>
   /** Tell the manager to identify a Shard. If this Shard is not already managed this will also add the Shard to the manager. */
@@ -460,7 +527,7 @@ export interface GatewayManager extends Required<CreateGatewayManagerOptions> {
    *
    * @see {@link https://discord.com/developers/docs/topics/gateway#request-guild-members}
    */
-  requestMembers: (guildId: BigString, options?: Omit<RequestGuildMembers, 'guildId'>) => Promise<Camelize<DiscordMember[]>>
+  requestMembers: (guildId: BigString, options?: Omit<RequestGuildMembers, 'guildId'>) => Promise<Camelize<DiscordMemberWithUser[]>>
   /**
    * Leaves the voice channel the bot user is currently in.
    *
@@ -480,7 +547,7 @@ export interface RequestMemberRequest {
   /** The unique nonce for this request. */
   nonce: string
   /** The resolver handler to run when all members arrive. */
-  resolve: (value: Camelize<DiscordMember[]> | PromiseLike<Camelize<DiscordMember[]>>) => void
+  resolve: (value: Camelize<DiscordMemberWithUser[]> | PromiseLike<Camelize<DiscordMemberWithUser[]>>) => void
   /** The members that have already arrived for this request. */
-  members: Camelize<DiscordMember[]>
+  members: DiscordMemberWithUser[]
 }

@@ -3,6 +3,8 @@
 # Test file for testing dd changes
 debug.ts
 
+testing
+
 # dependencies
 node_modules
 
@@ -13,6 +15,12 @@ node_modules
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
+proxies/*/.yarn/*
+!proxies/*/.yarn/patches
+!proxies/*/.yarn/plugins
+!proxies/*/.yarn/releases
+!proxies/*/.yarn/sdks
+!proxies/*/.yarn/versions
 site/docs/generated/classes
 site/docs/generated/enums
 site/docs/generated/interfaces
@@ -28,11 +36,13 @@ coverage
 # build
 dist
 denoTestsDist
+bunTestsDist
 benchDist
 out
 build
 .docusaurus
 .cache-loader
+/db
 
 # misc
 .DS_Store

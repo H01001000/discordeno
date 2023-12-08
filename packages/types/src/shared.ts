@@ -39,8 +39,23 @@ export enum ChannelFlags {
   None,
   /** this thread is pinned to the top of its parent `GUILD_FORUM` channel */
   Pinned = 1 << 1,
-  /** Whether a tag is required to be specified when creating a thread in a `GUILD_FORUM` channel. Tags are specified in the `applied_tags` field. */
-  RequireTag,
+  /** Whether a tag is required to be specified when creating a thread in a `GUILD_FORUM` or a GUILD_MEDIA channel. Tags are specified in the `applied_tags` field. */
+  RequireTag = 1 << 4,
+  /** When set hides the embedded media download options. Available only for media channels. */
+  HideMediaDownloadOptions = 1 << 15,
+}
+
+/** https://discord.com/developers/docs/topics/permissions#role-object-role-flags */
+export enum RoleFlags {
+  None,
+  /** Role can be selected by members in an onboarding prompt */
+  InPrompt = 1 << 0,
+}
+
+export enum AttachmentFlags {
+  None,
+  /** This attachment has been edited using the remix feature on mobile */
+  IsRemix = 1 << 2,
 }
 
 /** https://discord.com/developers/docs/resources/guild#integration-object-integration-expire-behaviors */
@@ -57,6 +72,8 @@ export enum TeamMembershipStates {
 
 /** https://discord.com/developers/docs/topics/oauth2#application-application-flags */
 export enum ApplicationFlags {
+  /** Indicates if an app uses the Auto Moderation API. */
+  ApplicationAutoModerationRuleCreateBadge = 1 << 6,
   /** Intent required for bots in **100 or more servers** to receive [`presence_update` events](#DOCS_TOPICS_GATEWAY/presence-update) */
   GatewayPresence = 1 << 12,
   /** Intent required for bots in under 100 servers to receive [`presence_update` events](#DOCS_TOPICS_GATEWAY/presence-update), found in Bot Settings */
@@ -213,8 +230,6 @@ export enum GuildFeatures {
   TicketedEventsEnabled = 'TICKETED_EVENTS_ENABLED',
   /** Guild has increased custom sticker slots */
   MoreStickers = 'MORE_STICKERS',
-  /** Guild has access to create private threads */
-  PrivateThreads = 'PRIVATE_THREADS',
   /** Guild is able to set role icons */
   RoleIcons = 'ROLE_ICONS',
   /** Guild has role subscriptions that can be purchased. */
@@ -227,6 +242,8 @@ export enum GuildFeatures {
   InvitesDisabled = 'INVITES_DISABLED',
   /** Guild has access to set an animated guild banner image */
   AnimatedBanner = 'ANIMATED_BANNER',
+  /** Guild has disabled alerts for join raids in the configured safety alerts channel */
+  RaidAlertsDisabled = 'RAID_ALERTS_DISABLED',
 }
 
 /** https://discord.com/developers/docs/resources/guild#guild-object-mfa-level */
@@ -295,6 +312,8 @@ export enum ChannelTypes {
   GuildDirectory,
   /** A channel which can only contains threads */
   GuildForum,
+  /** Channel that can only contain threads, similar to GUILD_FORUM channels */
+  GuildMedia,
 }
 
 export enum OverwriteTypes {
@@ -309,14 +328,14 @@ export enum VideoQualityModes {
   Full,
 }
 
-/** https://discord.com/developers/docs/topics/gateway#activity-object-activity-types */
+/** https://discord.com/developers/docs/topics/gateway-events#activity-object-activity-types */
 export enum ActivityTypes {
-  Game,
-  Streaming,
-  Listening,
-  Watching,
+  Game = 0,
+  Streaming = 1,
+  Listening = 2,
+  Watching = 3,
   Custom = 4,
-  Competing,
+  Competing = 5,
 }
 
 /** https://discord.com/developers/docs/resources/channel#message-object-message-types */
@@ -357,16 +376,16 @@ export enum MessageTypes {
 /** https://discord.com/developers/docs/resources/channel#message-object-message-activity-types */
 export enum MessageActivityTypes {
   Join = 1,
-  Spectate,
-  Listen,
-  JoinRequest,
+  Spectate = 2,
+  Listen = 3,
+  JoinRequest = 5,
 }
 
 /** https://discord.com/developers/docs/resources/sticker#sticker-object-sticker-types */
 export enum StickerTypes {
-  /** an official sticker in a pack, part of Nitro or in a removed purchasable pack */
+  /** an official sticker in a pack */
   Standard = 1,
-  /** a sticker uploaded to a Boosted guild for the guild's members */
+  /** a sticker uploaded to a guild for the guild's members */
   Guild,
 }
 
@@ -507,6 +526,14 @@ export enum AuditLogEvents {
   AutoModerationRuleDelete,
   /** Message was blocked by AutoMod according to a rule. */
   AutoModerationBlockMessage,
+  /** Message was flagged by AutoMod */
+  AudoModerationFlagMessage,
+  /** Member was timed out by AutoMod */
+  AutoModerationMemberTimedOut,
+  /** Creator monetization request was created */
+  CreatorMonetizationRequestCreated = 150,
+  /** Creator monetization terms were accepted */
+  CreatorMonetizationTermsAccepted,
 }
 
 export enum ScheduledEventPrivacyLevel {
@@ -610,13 +637,13 @@ export enum BitwisePermissionFlags {
   MANAGE_ROLES = 0x0000000010000000,
   /** Allows management and editing of webhooks */
   MANAGE_WEBHOOKS = 0x0000000020000000,
-  /** Allows management and editing of emojis and stickers */
-  MANAGE_EMOJIS_AND_STICKERS = 0x0000000040000000,
+  /** Allows for editing and deleting emojis, stickers, and soundboard sounds created by all users */
+  MANAGE_GUILD_EXPRESSIONS = 0x0000000040000000,
   /** Allows members to use application commands in text channels */
   USE_SLASH_COMMANDS = 0x0000000080000000,
   /** Allows for requesting to speak in stage channels. */
   REQUEST_TO_SPEAK = 0x0000000100000000,
-  /** Allows for creating, editing, and deleting scheduled events */
+  /** Allows for editing and deleting scheduled events created by all users */
   MANAGE_EVENTS = 0x0000000200000000,
   /** Allows for deleting and archiving threads, and viewing all private threads */
   MANAGE_THREADS = 0x0000000400000000,
@@ -632,6 +659,18 @@ export enum BitwisePermissionFlags {
   USE_EMBEDDED_ACTIVITIES = 0x0000008000000000,
   /** Allows for timing out users to prevent them from sending or reacting to messages in chat and threads, and from speaking in voice and stage channels */
   MODERATE_MEMBERS = 0x0000010000000000,
+  /** Allows for viewing role subscription insights. */
+  VIEW_CREATOR_MONETIZATION_ANALYTICS = 0x0000020000000000,
+  /** Allows for using soundboard in a voice channel. */
+  USE_SOUNDBOARD = 0x0000040000000000,
+  /** Allows for creating emojis, stickers, and soundboard sounds, and editing and deleting those created by the current user */
+  CREATE_GUILD_EXPRESSIONS = 0x0000080000000000,
+  /** Allows for creating scheduled events, and editing and deleting those created by the current user */
+  CREATE_EVENTS = 0x0000100000000000,
+  /** Allows the usage of custom soundboards sounds from other servers */
+  USE_EXTERNAL_SOUNDS = 0x0000200000000000,
+  /** Allows sending voice messages */
+  SEND_VOICE_MESSAGES = 0x0000400000000000,
 }
 
 export type PermissionStrings = keyof typeof BitwisePermissionFlags
@@ -646,13 +685,13 @@ export enum GatewayCloseEventCodes {
   UnknownOpcode,
   /** You sent an invalid [payload](https://discord.com/developers/docs/topics/gateway#sending-payloads) to us. Don't do that! */
   DecodeError,
-  /** You sent us a payload prior to [identifying](https://discord.com/developers/docs/topics/gateway#identify). */
+  /** You sent us a payload prior to [identifying](https://discord.com/developers/docs/topics/gateway-events#identify). */
   NotAuthenticated,
-  /** The account token sent with your [identify payload](https://discord.com/developers/docs/topics/gateway#identify) is incorrect. */
+  /** The account token sent with your [identify payload](https://discord.com/developers/docs/topics/gateway-events#identify) is incorrect. */
   AuthenticationFailed,
   /** You sent more than one identify payload. Don't do that! */
   AlreadyAuthenticated,
-  /** The sequence sent when [resuming](https://discord.com/developers/docs/topics/gateway#resume) the session was invalid. Reconnect and start a new session. */
+  /** The sequence sent when [resuming](https://discord.com/developers/docs/topics/gateway-events#resume) the session was invalid. Reconnect and start a new session. */
   InvalidSeq = 4007,
   /** Woah nelly! You're sending payloads to us too quickly. Slow it down! You will be disconnected on receiving this. */
   RateLimited,
@@ -757,6 +796,9 @@ export type GatewayDispatchEventNames =
   | 'VOICE_STATE_UPDATE'
   | 'VOICE_SERVER_UPDATE'
   | 'WEBHOOKS_UPDATE'
+  | 'ENTITLEMENT_CREATE'
+  | 'ENTITLEMENT_UPDATE'
+  | 'ENTITLEMENT_DELETE'
 
 export type GatewayEventNames = GatewayDispatchEventNames | 'READY' | 'RESUMED'
 
@@ -764,6 +806,7 @@ export type GatewayEventNames = GatewayDispatchEventNames | 'READY' | 'RESUMED'
 export enum GatewayIntents {
   /**
    * - GUILD_CREATE
+   * - GUILD_UPDATE
    * - GUILD_DELETE
    * - GUILD_ROLE_CREATE
    * - GUILD_ROLE_UPDATE
@@ -787,17 +830,22 @@ export enum GatewayIntents {
    * - GUILD_MEMBER_ADD
    * - GUILD_MEMBER_UPDATE
    * - GUILD_MEMBER_REMOVE
+   * - THREAD_MEMBERS_UPDATE
+   *
+   * This is a privileged intent.
    */
   GuildMembers = 1 << 1,
   /**
+   * - GUILD_AUDIT_LOG_ENTRY_CREATE
    * - GUILD_BAN_ADD
    * - GUILD_BAN_REMOVE
    */
-  GuildBans = 1 << 2,
+  GuildModeration = 1 << 2,
   /**
    * - GUILD_EMOJIS_UPDATE
+   * - GUILD_STICKERS_UPDATE
    */
-  GuildEmojis = 1 << 3,
+  GuildEmojisAndStickers = 1 << 3,
   /**
    * - GUILD_INTEGRATIONS_UPDATE
    * - INTEGRATION_CREATE
@@ -805,7 +853,7 @@ export enum GatewayIntents {
    * - INTEGRATION_DELETE
    */
   GuildIntegrations = 1 << 4,
-  /** Enables the following events:
+  /**
    * - WEBHOOKS_UPDATE
    */
   GuildWebhooks = 1 << 5,
@@ -820,13 +868,18 @@ export enum GatewayIntents {
   GuildVoiceStates = 1 << 7,
   /**
    * - PRESENCE_UPDATE
+   *
+   * This is a privileged intent.
    */
   GuildPresences = 1 << 8,
   /**
    * - MESSAGE_CREATE
    * - MESSAGE_UPDATE
    * - MESSAGE_DELETE
-   */
+   * - MESSAGE_DELETE_BULK
+   *
+   * The messages do not contain content by default.
+   * If you want to receive their content too, you need to turn on the privileged `MESSAGE_CONTENT` intent. */
   GuildMessages = 1 << 9,
   /**
    * - MESSAGE_REACTION_ADD
@@ -858,9 +911,10 @@ export enum GatewayIntents {
    * - TYPING_START
    */
   DirectMessageTyping = 1 << 14,
-
   /**
-   * This intent will add `content` values to all message objects.
+   * This intent will add all content related values to message events.
+   *
+   * This is a privileged intent.
    */
   MessageContent = 1 << 15,
   /**
@@ -871,7 +925,6 @@ export enum GatewayIntents {
    * - GUILD_SCHEDULED_EVENT_USER_REMOVE this is experimental and unstable.
    */
   GuildScheduledEvents = 1 << 16,
-
   /**
    * - AUTO_MODERATION_RULE_CREATE
    * - AUTO_MODERATION_RULE_UPDATE
@@ -903,6 +956,8 @@ export enum InteractionResponseTypes {
   ApplicationCommandAutocompleteResult = 8,
   /** For Command or Component interactions, send a Modal response */
   Modal = 9,
+  /** Respond to an interaction with an upgrade button, only available for apps with monetization enabled */
+  PremiumRequired = 10,
 }
 
 export enum SortOrderTypes {
@@ -912,7 +967,7 @@ export enum SortOrderTypes {
   CreationDate,
 }
 
-export enum FormLayout {
+export enum ForumLayout {
   /** No default has been set for forum channel. */
   NotSet = 0,
   /** Display posts as a list. */
@@ -974,15 +1029,15 @@ export type Camelize<T> = T extends any[]
     ? Array<Camelize<T[number]>>
     : T
   : T extends Record<any, any>
-  ? { [K in keyof T as CamelCase<K & string>]: Camelize<T[K]> }
-  : T
+    ? { [K in keyof T as CamelCase<K & string>]: Camelize<T[K]> }
+    : T
 
 export type Snakelize<T> = T extends any[]
   ? T extends Array<Record<any, any>>
     ? Array<Snakelize<T[number]>>
     : T
   : T extends Record<any, any>
-  ? { [K in keyof T as SnakeCase<K & string>]: Snakelize<T[K]> }
-  : T
+    ? { [K in keyof T as SnakeCase<K & string>]: Snakelize<T[K]> }
+    : T
 
 export type PickPartial<T, K extends keyof T> = { [P in keyof T]?: T[P] | undefined } & { [P in K]: T[P] }

@@ -13,7 +13,6 @@ before(async () => {
 })
 
 after(async () => {
-  if (rest.invalidBucket.timeoutId) clearTimeout(rest.invalidBucket.timeoutId)
   if (e2ecache.guild.id && !e2ecache.deletedGuild) {
     await rest.deleteGuild(e2ecache.guild.id)
   }
@@ -33,7 +32,7 @@ describe('Get a user from the api', () => {
       })
 
       it('Has a valid discriminator', () => {
-        expect(user.discriminator.length).to.be.equal(4)
+        expect(user.discriminator.length).to.be.oneOf([1, 4])
       })
 
       it('Has been camelized', () => {
