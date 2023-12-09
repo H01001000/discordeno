@@ -13,9 +13,6 @@ jobs:
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     steps:
       - uses: actions/checkout@v3
-      - uses: denoland/setup-deno@main
-        with:
-          deno-version: v1.x
       - name: Download Commit Data Artifact
         uses: actions/github-script@v6
         with:
