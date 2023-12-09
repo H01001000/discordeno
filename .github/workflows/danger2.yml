@@ -41,3 +41,5 @@ jobs:
         run: unzip dangerOutput.zip
 
       - run: yarn dlx danger ci --process 'node ./scripts/parseDangerOutput.js'
+        env:
+          DANGER_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
