@@ -36,7 +36,9 @@ jobs:
 
       - name: Unzip Commit Data Artifact
         run: unzip dangerOutput.zip
-
+      - run: yarn dlx danger ci --js
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: DANGER_VERBOSE="aye" yarn dlx danger ci --process 'node ./scripts/parseDangerOutput.js'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
