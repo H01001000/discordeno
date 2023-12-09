@@ -1,0 +1,43 @@
+name: Comment danger
+
+on:
+  workflow_run:
+    workflows: [danger]
+    types:
+      - completed
+
+jobs:
+  comment-benchmark-result:
+    name: Comment Benchmark Result
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - uses: actions/checkout@v3
+      - uses: denoland/setup-deno@main
+        with:
+          deno-version: v1.x
+      - name: Download Commit Data Artifact
+        uses: actions/github-script@v6
+        with:
+          script: |
+            let allArtifacts = await github.rest.actions.listWorkflowRunArtifacts({
+               owner: context.repo.owner,
+               repo: context.repo.repo,
+               run_id: context.payload.workflow_run.id,
+            });
+            let matchArtifact = allArtifacts.data.artifacts.filter((artifact) => {
+              return artifact.name == "dangerOutput"
+            })[0];
+            let download = await github.rest.actions.downloadArtifact({
+               owner: context.repo.owner,
+               repo: context.repo.repo,
+               artifact_id: matchArtifact.id,
+               archive_format: 'zip',
+            });
+            let fs = require('fs');
+            fs.writeFileSync(`${process.env.GITHUB_WORKSPACE}/dangerOutput.zip`, Buffer.from(download.data));
+
+      - name: Unzip Commit Data Artifact
+        run: unzip dangerOutput.zip
+
+      - run: yarn dlx danger ci --process 'node ./scripts/parseDangerOutput.js'

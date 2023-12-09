@@ -1,3 +1,4 @@
+name: danger
 on: pull_request
 
 jobs:
@@ -9,6 +10,10 @@ jobs:
       - uses: actions/setup-node@v3
         with:
           node-version: 18
-      - run: yarn dlx danger ci --text-only
+      - run: yarn dlx danger ci --text-only > dangerOutput.txt
         env:
           DANGER_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/upload-artifact@v3
+        with:
+          name: dangerOutput
+          path: dangerOutput.txt
