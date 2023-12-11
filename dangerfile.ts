@@ -1,5 +1,6 @@
 import { danger, message, warn } from 'danger'
 
+
 const commitType = ['build', 'chore', 'ci', 'docs', 'style', 'refactor', 'perf', 'test']
 
 if (!commitType.find((type) => danger.github.pr.title.startsWith(type))) {
